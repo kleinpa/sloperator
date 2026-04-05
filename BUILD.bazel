@@ -1,0 +1,64 @@
+load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_library")
+load("@rules_oci//oci:defs.bzl", "oci_image", "oci_push")
+load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
+
+# ── Shared header-only library ────────────────────────────────────────────────
+
+cc_library(
+    name = "chatbot_lib",
+    hdrs = ["chatbot_lib.hpp"],
+    visibility = ["//visibility:public"],
+)
+
+# ── offhook binary ────────────────────────────────────────────────────────
+
+cc_binary(
+    name = "offhook",
+    srcs = ["main.cpp"],
+    linkopts = [
+        "-ldl",
+        "-lpthread",
+        "-lm",
+        "-lrt",
+        "-static-libstdc++",
+        "-static-libgcc",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":chatbot_lib",
+        "@abseil-cpp//absl/flags:flag",
+        "@abseil-cpp//absl/flags:parse",
+        "@abseil-cpp//absl/flags:usage",
+        "@abseil-cpp//absl/log",
+        "@abseil-cpp//absl/log:globals",
+        "@abseil-cpp//absl/log:initialize",
+        "@cpp-httplib//:httplib",
+        "@nlohmann_json//:json",
+        "@pjsip",
+        "@yaml-cpp//:yaml-cpp",
+    ],
+)
+
+# ── OCI container image ───────────────────────────────────────────────────────
+
+pkg_tar(
+    name = "offhook_layer",
+    srcs = [":offhook"],
+    package_dir = "/usr/local/bin",
+)
+
+oci_image(
+    name = "image",
+    base = "@distroless_cc",
+    entrypoint = ["/usr/local/bin/offhook"],
+    exposed_ports = ["5060/udp"],
+    tars = [":offhook_layer"],
+)
+
+# Use --@//:repository=ghcr.io/owner/repo to override at push time.
+oci_push(
+    name = "image_push",
+    image = ":image",
+    remote_tags = ["latest"],
+    repository = "ghcr.io/placeholder",
+)

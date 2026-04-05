@@ -1,0 +1,59 @@
+module(
+    name = "sip_chatbot",
+)
+
+bazel_dep(name = "abseil-cpp", version = "20260107.1")
+bazel_dep(name = "libuuid", version = "2.41.2")
+single_version_override(
+    module_name = "libuuid",
+    patch_strip = 1,
+    patches = ["//third_party/libuuid:fix_strptime.patch"],
+)
+
+bazel_dep(name = "bazel_skylib", version = "1.8.2")
+bazel_dep(name = "googletest", version = "1.17.0.bcr.2")
+bazel_dep(name = "platforms", version = "1.0.0")
+bazel_dep(name = "rules_cc", version = "0.2.17")
+bazel_dep(name = "rules_foreign_cc", version = "0.15.1")
+bazel_dep(name = "rules_oci", version = "2.3.0")
+bazel_dep(name = "rules_pkg", version = "1.2.0")
+bazel_dep(name = "cpp-httplib", version = "0.22.0")
+bazel_dep(name = "boringssl", version = "0.0.0-20240530-2db0eb3")
+single_version_override(
+    module_name = "boringssl",
+    patch_strip = 1,
+    patches = [
+        "//third_party/boringssl:remove_werror.patch",
+        "//third_party/boringssl:fix_generic_cxx.patch",
+    ],
+)
+bazel_dep(name = "yaml-cpp", version = "0.9.0")
+bazel_dep(name = "nlohmann_json", version = "3.12.0.bcr.1")
+
+# ── rules_foreign_cc toolchain: use system tools ──────────────────────────────
+register_toolchains(
+    "@rules_foreign_cc//toolchains:preinstalled_make_toolchain",
+    "@rules_foreign_cc//toolchains:preinstalled_automake_toolchain",
+    "@rules_foreign_cc//toolchains:preinstalled_autoconf_toolchain",
+    "@rules_foreign_cc//toolchains:preinstalled_m4_toolchain",
+    "@rules_foreign_cc//toolchains:preinstalled_pkgconfig_toolchain",
+)
+
+oci = use_extension("@rules_oci//oci:extensions.bzl", "oci")
+oci.pull(
+    name = "distroless_cc",
+    digest = "sha256:329e54034ce498f9c6b345044e8f530c6691f99e94a92446f68c0adf9baa8464",
+    image = "gcr.io/distroless/cc-debian12",
+    platforms = ["linux/amd64"],
+)
+use_repo(oci, "distroless_cc", "distroless_cc_linux_amd64")
+
+http_archive = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
+
+http_archive(
+    name = "pjsip",
+    build_file = "@//:third_party/pjsip/pjsip.BUILD",
+    sha256 = "6140f7a97e318caa89c17e8d5468599671c6eed12d64a7c160dac879ba004c68",
+    strip_prefix = "pjproject-2.14.1",
+    urls = ["https://github.com/pjsip/pjproject/archive/refs/tags/2.14.1.tar.gz"],
+)

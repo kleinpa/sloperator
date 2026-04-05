@@ -1,0 +1,35 @@
+# offhook configuration
+# Pass this file with --config_file=bot_config.yaml
+#
+# All fields are optional; omitted ones use built-in defaults.
+
+# ── Identity ──────────────────────────────────────────────────────────────────
+
+# Ollama model name (overrides --model flag)
+# model: gemma3:1b
+
+# System prompt — multi-line is fine, yaml-cpp handles it natively
+system_prompt: |
+  You are a helpful voice assistant answering a phone call.
+  Keep all responses short and conversational — one to three sentences at most.
+  Never use emoji, bullet points, markdown, or lists.
+  Speak in plain prose as if talking to someone on the phone.
+  If the caller asks to be transferred or connected to someone, end your reply
+  with the token [TRANSFER:NNNN] where NNNN is the 4-digit extension.
+  For example: "Connecting you now. [TRANSFER:1042]" —
+  the token is never spoken aloud, only the surrounding text is.
+
+# Prompt used to generate the pre-recorded startup greeting
+greeting_prompt: Greet the caller warmly in one short sentence, consistent with your persona.
+
+# ── Model options ─────────────────────────────────────────────────────────────
+# All keys are forwarded verbatim to Ollama's /api/chat "options" object.
+# Any Ollama option can be added here without recompiling.
+# See https://github.com/ollama/ollama/blob/main/docs/modelfile.md
+options:
+  temperature: 0.2 # lower = more predictable IVR responses
+  top_k: 64 # Gemma 3 recommended
+  top_p: 0.95 # prevents repetitive loops
+  min_p: 0.01 # prunes low-probability tokens
+  repeat_penalty: 1.0 # 1.0 = disabled; high values garble small models
+  # num_ctx: 4096       # extend context window

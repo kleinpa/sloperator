@@ -1,0 +1,10 @@
+--- a/BUILD.bazel
++++ b/BUILD.bazel
+@@ -22,6 +22,7 @@
+     copts = [
+         "-Wno-implicit-function-declaration",
+         "-Wno-return-type",
++        "-Wno-int-conversion",
+     ],
+     defines = [
+         "HAVE_NANOSLEEP",

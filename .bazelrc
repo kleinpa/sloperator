@@ -1,0 +1,19 @@
+build --cxxopt=-std=c++17
+build --copt=-Wall
+build --copt=-Wextra
+# Propagate C++ standard through foreign_cc builds
+build --action_env=CXXFLAGS=-std=c++17
+# Propagate aclocal search path so autoreconf can find m4 macros (e.g. libtool)
+# when the system doesn't aggregate them automatically. Set ACLOCAL_PATH in your
+# shell or profile to point at any extra m4 macro directories.
+build --action_env=ACLOCAL_PATH
+
+# In this environment, GitHub traffic goes through a TLS-intercepting proxy whose
+# CA cert is trusted by the system Java keystore but not Bazel's bundled JDK.
+# Point Bazel's server JVM at the system truststore so module downloads work.
+startup --host_jvm_args=-Djavax.net.ssl.trustStore=/etc/ssl/certs/adoptium/cacerts
+startup --host_jvm_args=-Djavax.net.ssl.trustStorePassword=changeit
+
+# bcr.bazel.build is not reachable in this environment; use the raw GitHub
+# mirror of the Bazel Central Registry instead.
+common --registry=https://raw.githubusercontent.com/bazelbuild/bazel-central-registry/refs/heads/main

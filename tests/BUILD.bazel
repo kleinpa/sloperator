@@ -1,0 +1,10 @@
+load("@rules_cc//cc:defs.bzl", "cc_test")
+
+cc_test(
+    name = "test_chatbot",
+    srcs = ["test_chatbot.cpp"],
+    deps = [
+        "//:chatbot_lib",
+        "@googletest//:gtest_main",
+    ],
+)
