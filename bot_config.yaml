@@ -5,7 +5,7 @@
 
 # ── Identity ──────────────────────────────────────────────────────────────────
 
-# Ollama model name
+# Ollama model name (default: gemma3:1b)
 # model: gemma3:1b
 
 # System prompt — multi-line is fine, yaml-cpp handles it natively
