@@ -706,20 +706,25 @@ struct Session {
     // Called from PJSUA2 audio thread.
     void ProcessRxFrame(const int16_t *samples, int n) {
         // Don't let incoming speech interrupt the assistant while it is talking.
+        // Any speech captured during playback is discarded — callers must wait
+        // for the assistant to finish before they can be heard.
         if (audio_out.Size() > 0) {
             vad.Reset();
             return;
         }
 
         bool was_listening = vad.in_speech;
-        if (vad.ProcessFrame(samples, n)) {
-            SubmitUtterance(std::move(vad.ready));
-        } else if (!was_listening && vad.in_speech) {
-            // VAD just detected speech onset — play a bright chime so the caller
-            // knows the system has started listening.
+        bool complete = vad.ProcessFrame(samples, n);
+
+        // Play a bright chime at the moment the VAD first enters speech state so
+        // the caller gets immediate audible feedback that the mic is active.
+        if (!was_listening && vad.in_speech) {
             auto chime = SynthesizeSttListeningChime();
             audio_out.Push(chime.data(), chime.size());
         }
+
+        if (complete)
+            SubmitUtterance(std::move(vad.ready));
     }
 };
 
