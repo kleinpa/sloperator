@@ -218,8 +218,10 @@ inline std::vector<int16_t> WyomingSynthesize(const std::string &text,
         double ratio = static_cast<double>(piper_rate) / kAudioRate;
         std::vector<int16_t> resampled;
         resampled.reserve(static_cast<size_t>(pcm.size() / ratio) + 1);
-        for (size_t i = 0; i < pcm.size(); i += static_cast<size_t>(ratio))
-            resampled.push_back(pcm[i]);
+        // Use a floating-point source position to avoid integer rounding
+        // error accumulation over large buffers.
+        for (double pos = 0.0; static_cast<size_t>(pos) < pcm.size(); pos += ratio)
+            resampled.push_back(pcm[static_cast<size_t>(pos)]);
         return resampled;
     }
     return pcm;

@@ -1029,7 +1029,7 @@ TEST(WyomingSynthesize, MultipleChunksAreConcat) {
 // End-to-end pipeline: VAD → mock STT → mock LLM → mock TTS → AudioQueue
 // ═══════════════════════════════════════════════════════════════════════════════
 
-TEST(Pipeline, VadToSttToLlmToTtsToAudioQueue) {
+TEST(Pipeline, VADToSTTToLLMToTTSToAudioQueue) {
     // ── Mock STT server ──────────────────────────────────────────────────────
     MockServer stt_server;
     const std::string kTranscript = "What time is it?";
