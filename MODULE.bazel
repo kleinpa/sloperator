@@ -52,7 +52,7 @@ http_archive(
 http_archive(
     name = "sherpa_onnx",
     build_file = "@//:third_party/sherpa_onnx/sherpa_onnx.BUILD",
-    sha256 = "2e823376987c3b6960d50726b6560155e2ad92da0b8b3886325773225ec6bdec",
-    strip_prefix = "sherpa-onnx-v2.0.1-linux-x64-shared",
-    urls = ["https://github.com/k2-fsa/sherpa-onnx/releases/download/v2.0.1/sherpa-onnx-v2.0.1-linux-x64-shared.tar.bz2"],
+    sha256 = "c0bdb7907d3a74bba1d55d22bf4d9fa75586cf1530614ebe88a27b9118e015c4",
+    strip_prefix = "sherpa-onnx-v1.13.8-linux-x64-shared",
+    urls = ["https://github.com/k2-fsa/sherpa-onnx/releases/download/v1.13.8/sherpa-onnx-v1.13.8-linux-x64-shared.tar.bz2"],
 )
