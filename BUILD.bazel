@@ -26,6 +26,7 @@ cc_library(
         "@cpp-httplib//:httplib",
         "@nlohmann_json//:json",
         "@pjsip",
+        "@yaml-cpp//:yaml-cpp",
     ],
 )
 
