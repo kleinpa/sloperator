@@ -2,6 +2,8 @@
 
 #include <gtest/gtest.h>
 
+#include <filesystem>
+
 #include "bot_core.h"
 
 static std::string Runfile(const char* env) { return std::string(getenv("TEST_SRCDIR")) + "/" + getenv(env); }
@@ -28,4 +30,12 @@ TEST(SileroVad, FindsSpeechIgnoresTones) {
   EXPECT_EQ(Utterances(*MakeSileroVad(p), Tone(2000)), 0);
   g_cfg = {};  // energy VAD, for contrast: a tone opens a turn
   EXPECT_EQ(Utterances(*MakeVad(), Tone(2000)), 1);
+}
+
+static std::string Dir(const char* env) { return std::filesystem::path(Runfile(env)).parent_path(); }
+
+TEST(SherpaAsr, TranscribesSpeech) {  // JFK clip
+  g_cfg = {};
+  auto t = MakeSherpaAsr(Dir("STT_MODEL"))->Transcribe(ReadWav(Runfile("STT_WAV")));
+  EXPECT_EQ(t, "Ask not what your country can do for you. Ask what you can do for your country.");
 }

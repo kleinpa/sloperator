@@ -72,3 +72,21 @@ http_file(
     sha256 = "89f17d9c94c4b31eb320f424628bcbc920abaddbee6e2760fd868bfb1d9a2e47",
     urls = ["https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/test_silero_vad.wav"],
 )
+
+# Moonshine v2 base, English, quantized: ~110 MB, fast on CPU.
+http_archive(
+    name = "moonshine_base_en",
+    build_file_content = 'filegroup(name = "model", srcs = glob(["*"]), visibility = ["//visibility:public"])\nexports_files(["tokens.txt", "test_wavs/0.wav"])',
+    sha256 = "43232c1d13013d37317163baec3135bd771a186a4356f28c889bab453bb0e891",
+    strip_prefix = "sherpa-onnx-moonshine-base-en-quantized-2026-02-27",
+    urls = ["https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-moonshine-base-en-quantized-2026-02-27.tar.bz2"],
+)
+
+# Parakeet TDT 0.6B v2 int8: ~650 MB, more accurate, slower. Optional.
+http_archive(
+    name = "parakeet_tdt_v2",
+    build_file_content = 'filegroup(name = "model", srcs = glob(["*"]), visibility = ["//visibility:public"])\nexports_files(["tokens.txt"])',
+    sha256 = "157c157bc51155e03e37d2466522a3a737dd9c72bb25f36eb18912964161e1ad",
+    strip_prefix = "sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8",
+    urls = ["https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8.tar.bz2"],
+)

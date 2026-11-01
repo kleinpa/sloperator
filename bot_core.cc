@@ -35,10 +35,10 @@ void LoadConfig(const std::string& text) {
   };
   auto& c = g_cfg;
   for (auto [k, v] : std::initializer_list<std::pair<const char*, std::string*>>{{"whisper", &c.whisper}, {"ollama", &c.ollama}, {"piper", &c.piper},
-                      {"pbx", &c.pbx}, {"model", &c.model}, {"language", &c.language},
+                      {"pbx", &c.pbx}, {"model", &c.model}, {"stt_model", &c.stt_model}, {"language", &c.language},
                       {"greeting", &c.greeting}, {"system_prompt", &c.prompt}, {"knowledge", &c.knowledge}})
     get(y, k, *v);
-  get(y, "max_calls", c.max_calls), get(y, "history_turns", c.history_turns);
+  get(y, "max_calls", c.max_calls), get(y, "history_turns", c.history_turns), get(y, "threads", c.threads);
   get(y, "tts_rms", c.tts_rms), get(y, "directory", c.directory);
   if (y["think"]) c.think = Scalar(y["think"]);
   if (auto v = y["vad"]) get(v, "model", c.vad.model), get(v, "prob", c.vad.prob),
@@ -212,6 +212,9 @@ std::unique_ptr<VadEngine> MakeVad() {
   return e;
 }
 
+std::unique_ptr<AsrClient> MakeAsr() {
+  return g_cfg.stt_model.empty() ? MakeWyomingAsrClient() : MakeSherpaAsr(g_cfg.stt_model);
+}
 std::unique_ptr<AsrClient> MakeWyomingAsrClient() { return std::make_unique<WyomingAsr>(); }
 std::unique_ptr<TtsClient> MakeWyomingTtsClient() { return std::make_unique<WyomingTts>(); }
 std::unique_ptr<LlmClient> MakeOllamaClient() { return std::make_unique<Ollama>(); }
@@ -223,7 +226,7 @@ void Warmup() {
   g_greeting_pcm = MakeWyomingTtsClient()->Synthesize(g_cfg.greeting);
   Normalize(g_greeting_pcm, g_cfg.tts_rms);
   LOG(INFO) << "[warmup] tts " << ms() << " ms";
-  MakeWyomingAsrClient()->Transcribe(std::vector<int16_t>(kAudioRate / 2));
+  MakeAsr()->Transcribe(std::vector<int16_t>(kAudioRate / 2));
   LOG(INFO) << "[warmup] stt " << ms() << " ms";
   // Loads the model and caches the system-prompt prefix; aborts at first sentence.
   MakeOllamaClient()->Chat({{{"role", "system"}, {"content", SystemPrompt()}},
@@ -390,7 +393,7 @@ void BotCall::onCallMediaState(pj::OnCallMediaStateParam&) {
           LOG(ERROR) << "[call] transfer failed: " << pj_strerror(st, e, sizeof e).ptr;
         }
       };
-      session_ = std::make_unique<Session>(ci.remoteUri, xfer, MakeWyomingAsrClient(),
+      session_ = std::make_unique<Session>(ci.remoteUri, xfer, MakeAsr(),
                                            MakeWyomingTtsClient(), MakeOllamaClient());
       session_->Start();
       port_ = std::make_unique<BotAudioPort>(*session_);

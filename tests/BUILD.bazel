@@ -42,13 +42,39 @@ cc_test(
     name = "test_sherpa",
     srcs = ["test_sherpa.cc"],
     data = [
+        "@moonshine_base_en//:model",
+        "@moonshine_base_en//:test_wavs/0.wav",
+        "@moonshine_base_en//:tokens.txt",
         "@silero_vad//file",
         "@silero_vad_wav//file",
     ],
     env = {
+        "STT_MODEL": "$(rlocationpath @moonshine_base_en//:tokens.txt)",
+        "STT_WAV": "$(rlocationpath @moonshine_base_en//:test_wavs/0.wav)",
         "VAD_MODEL": "$(rlocationpath @silero_vad//file)",
         "SPEECH_WAV": "$(rlocationpath @silero_vad_wav//file)",
     },
+    deps = [
+        "//:bot_core",
+        "@googletest//:gtest_main",
+    ],
+)
+
+# Same ASR test on Parakeet (650 MB download): bazel test //tests:test_sherpa_parakeet
+cc_test(
+    name = "test_sherpa_parakeet",
+    srcs = ["test_sherpa.cc"],
+    args = ["--gtest_filter=SherpaAsr.*"],
+    data = [
+        "@moonshine_base_en//:test_wavs/0.wav",
+        "@parakeet_tdt_v2//:model",
+        "@parakeet_tdt_v2//:tokens.txt",
+    ],
+    env = {
+        "STT_MODEL": "$(rlocationpath @parakeet_tdt_v2//:tokens.txt)",
+        "STT_WAV": "$(rlocationpath @moonshine_base_en//:test_wavs/0.wav)",
+    },
+    tags = ["manual"],
     deps = [
         "//:bot_core",
         "@googletest//:gtest_main",
