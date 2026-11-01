@@ -40,8 +40,6 @@ cc_binary(
         "-lpthread",
         "-lm",
         "-lrt",
-        "-static-libstdc++",
-        "-static-libgcc",
     ],
     visibility = ["//visibility:public"],
     deps = [

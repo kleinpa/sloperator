@@ -36,3 +36,13 @@ cc_test(
         "@googletest//:gtest_main",
     ],
 )
+
+# Links and loads the prebuilt sherpa-onnx/onnxruntime shared libs.
+cc_test(
+    name = "test_sherpa",
+    srcs = ["test_sherpa.cc"],
+    deps = [
+        "@googletest//:gtest_main",
+        "@sherpa_onnx",
+    ],
+)
