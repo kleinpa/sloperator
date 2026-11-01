@@ -39,3 +39,13 @@ TEST(SherpaAsr, TranscribesSpeech) {  // JFK clip
   auto t = MakeSherpaAsr(Dir("STT_MODEL"))->Transcribe(ReadWav(Runfile("STT_WAV")));
   EXPECT_EQ(t, "Ask not what your country can do for you. Ask what you can do for your country.");
 }
+
+// TTS → STT loopback: what we say must be understood by what we hear with.
+TEST(SherpaTts, SpeechIsIntelligible) {
+  g_cfg = {};
+  auto pcm = MakeSherpaTts(Dir("TTS_MODEL"))->Synthesize("Please transfer me to the sales team.");
+  EXPECT_GT(pcm.size(), size_t(kAudioRate));  // >1 s at 16 kHz: right rate, not truncated
+  EXPECT_LT(pcm.size(), size_t(4 * kAudioRate));
+  auto t = MakeSherpaAsr(Dir("STT_MODEL"))->Transcribe(pcm);
+  for (auto c : {"transfer", "sales"}) EXPECT_NE(t.find(c), std::string::npos) << t;
+}

@@ -35,11 +35,12 @@ void LoadConfig(const std::string& text) {
   };
   auto& c = g_cfg;
   for (auto [k, v] : std::initializer_list<std::pair<const char*, std::string*>>{{"whisper", &c.whisper}, {"ollama", &c.ollama}, {"piper", &c.piper},
-                      {"pbx", &c.pbx}, {"model", &c.model}, {"stt_model", &c.stt_model}, {"language", &c.language},
+                      {"pbx", &c.pbx}, {"model", &c.model}, {"stt_model", &c.stt_model}, {"tts_model", &c.tts_model}, {"language", &c.language},
                       {"greeting", &c.greeting}, {"system_prompt", &c.prompt}, {"knowledge", &c.knowledge}})
     get(y, k, *v);
   get(y, "max_calls", c.max_calls), get(y, "history_turns", c.history_turns), get(y, "threads", c.threads);
   get(y, "tts_rms", c.tts_rms), get(y, "directory", c.directory);
+  get(y, "tts_speed", c.tts_speed), get(y, "tts_speaker", c.tts_speaker);
   if (y["think"]) c.think = Scalar(y["think"]);
   if (auto v = y["vad"]) get(v, "model", c.vad.model), get(v, "prob", c.vad.prob),
                          get(v, "threshold", c.vad.threshold), get(v, "silence_ms", c.vad.silence_ms),
@@ -215,6 +216,9 @@ std::unique_ptr<VadEngine> MakeVad() {
 std::unique_ptr<AsrClient> MakeAsr() {
   return g_cfg.stt_model.empty() ? MakeWyomingAsrClient() : MakeSherpaAsr(g_cfg.stt_model);
 }
+std::unique_ptr<TtsClient> MakeTts() {
+  return g_cfg.tts_model.empty() ? MakeWyomingTtsClient() : MakeSherpaTts(g_cfg.tts_model);
+}
 std::unique_ptr<AsrClient> MakeWyomingAsrClient() { return std::make_unique<WyomingAsr>(); }
 std::unique_ptr<TtsClient> MakeWyomingTtsClient() { return std::make_unique<WyomingTts>(); }
 std::unique_ptr<LlmClient> MakeOllamaClient() { return std::make_unique<Ollama>(); }
@@ -223,7 +227,7 @@ void Warmup() {
   auto t0 = std::chrono::steady_clock::now();
   auto ms = [&] { return std::chrono::duration_cast<std::chrono::milliseconds>(
                       std::chrono::steady_clock::now() - t0).count(); };
-  g_greeting_pcm = MakeWyomingTtsClient()->Synthesize(g_cfg.greeting);
+  g_greeting_pcm = MakeTts()->Synthesize(g_cfg.greeting);
   Normalize(g_greeting_pcm, g_cfg.tts_rms);
   LOG(INFO) << "[warmup] tts " << ms() << " ms";
   MakeAsr()->Transcribe(std::vector<int16_t>(kAudioRate / 2));
@@ -394,7 +398,7 @@ void BotCall::onCallMediaState(pj::OnCallMediaStateParam&) {
         }
       };
       session_ = std::make_unique<Session>(ci.remoteUri, xfer, MakeAsr(),
-                                           MakeWyomingTtsClient(), MakeOllamaClient());
+                                           MakeTts(), MakeOllamaClient());
       session_->Start();
       port_ = std::make_unique<BotAudioPort>(*session_);
     }

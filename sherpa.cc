@@ -1,4 +1,4 @@
-// sherpa.cc — in-process models via sherpa-onnx's C API (its C++ API .so is
+// sherpa.cc — in-process VAD/STT/TTS via sherpa-onnx's C API (its C++ API .so is
 // built with the old std::string ABI, so it can't be mixed with ours).
 
 #include <filesystem>
@@ -45,19 +45,30 @@ struct SileroVad : VadEngine {
 
 std::unique_ptr<VadEngine> MakeSileroVad(const VadParams& p) { return std::make_unique<SileroVad>(p); }
 
-// First file in `dir` whose name starts with `stem` ("" if none).
-static std::string Find(const std::string& dir, const std::string& stem) {
+// First file in `dir` named stem*ext ("" if none).
+static std::string Find(const std::string& dir, const std::string& stem, const std::string& ext = "") {
   for (auto& e : std::filesystem::directory_iterator(dir))
-    if (e.path().filename().string().rfind(stem, 0) == 0) return e.path();
+    if (auto n = e.path().filename().string();
+        n.rfind(stem, 0) == 0 && n.size() >= ext.size() && n.compare(n.size() - ext.size(), ext.size(), ext) == 0)
+      return e.path();
   return "";
+}
+
+// Models load once per dir and are shared by all calls (calls serialize on mu).
+template <class M> static std::shared_ptr<M> Load(const std::string& dir) {
+  static std::mutex mu;
+  static std::map<std::string, std::shared_ptr<M>> loaded;
+  std::lock_guard l(mu);
+  auto& m = loaded[dir];
+  return m ? m : m = std::make_shared<M>(dir);
 }
 
 // Offline ASR; the model kind is inferred from the files in `dir`:
 // joiner* → NeMo transducer (Parakeet), decoder_model_merged* → Moonshine v2.
-struct SherpaAsr : AsrClient {
+struct AsrModel {
   Ptr<SherpaOnnxOfflineRecognizer, SherpaOnnxDestroyOfflineRecognizer> r;
   std::mutex mu;
-  explicit SherpaAsr(const std::string& dir) {
+  explicit AsrModel(const std::string& dir) {
     std::string f[] = {Find(dir, "encoder"), Find(dir, "decoder"), Find(dir, "joiner"),
                        Find(dir, "decoder_model_merged"), Find(dir, "tokens.txt")};
     SherpaOnnxOfflineRecognizerConfig c{};
@@ -70,12 +81,15 @@ struct SherpaAsr : AsrClient {
     r.reset(SherpaOnnxCreateOfflineRecognizer(&c));
     if (!r) LOG(FATAL) << "[stt] can't load " << dir;
   }
+};
+struct SherpaAsr : AsrClient {
+  std::shared_ptr<AsrModel> m;
   std::string Transcribe(const std::vector<int16_t>& pcm) override {
-    std::lock_guard l(mu);
-    Ptr<SherpaOnnxOfflineStream, SherpaOnnxDestroyOfflineStream> s(SherpaOnnxCreateOfflineStream(r.get()));
+    std::lock_guard l(m->mu);
+    Ptr<SherpaOnnxOfflineStream, SherpaOnnxDestroyOfflineStream> s(SherpaOnnxCreateOfflineStream(m->r.get()));
     auto f = F32(pcm.data(), pcm.size());
     SherpaOnnxAcceptWaveformOffline(s.get(), kAudioRate, f.data(), f.size());
-    SherpaOnnxDecodeOfflineStream(r.get(), s.get());
+    SherpaOnnxDecodeOfflineStream(m->r.get(), s.get());
     Ptr<SherpaOnnxOfflineRecognizerResult, SherpaOnnxDestroyOfflineRecognizerResult> res(
         SherpaOnnxGetOfflineStreamResult(s.get()));
     std::string t = res->text;
@@ -83,20 +97,44 @@ struct SherpaAsr : AsrClient {
   }
 };
 
-// Models load once and are shared by all calls.
+// Offline TTS: voices.bin → Kokoro, else Piper (VITS). Both use espeak-ng-data.
+struct TtsModel {
+  Ptr<SherpaOnnxOfflineTts, SherpaOnnxDestroyOfflineTts> t;
+  std::mutex mu;
+  explicit TtsModel(const std::string& dir) {
+    std::string voices = Find(dir, "voices.bin"), model = Find(dir, voices.empty() ? "" : "model", ".onnx"),
+                tokens = Find(dir, "tokens.txt"), data = dir + "/espeak-ng-data";
+    SherpaOnnxOfflineTtsConfig c{};
+    auto& m = c.model;
+    m.num_threads = g_cfg.threads, m.provider = "cpu";
+    if (voices.empty()) m.vits = {model.c_str(), "", tokens.c_str(), data.c_str(), 0.667f, 0.8f, 1, ""};
+    else m.kokoro = {model.c_str(), voices.c_str(), tokens.c_str(), data.c_str(), 1, "", "", ""};
+    c.max_num_sentences = 1, c.silence_scale = 0.2f;
+    t.reset(SherpaOnnxCreateOfflineTts(&c));
+    if (!t) LOG(FATAL) << "[tts] can't load " << dir;
+  }
+};
+struct SherpaTts : TtsClient {
+  std::shared_ptr<TtsModel> m;
+  std::vector<int16_t> Synthesize(const std::string& text) override {
+    std::lock_guard l(m->mu);
+    SherpaOnnxGenerationConfig g{};
+    g.silence_scale = 0.2f, g.speed = g_cfg.tts_speed, g.sid = g_cfg.tts_speaker;
+    Ptr<SherpaOnnxGeneratedAudio, SherpaOnnxDestroyOfflineTtsGeneratedAudio> a(
+        SherpaOnnxOfflineTtsGenerateWithConfig(m->t.get(), text.c_str(), &g, nullptr, nullptr));
+    return a ? Resample(I16(a->samples, a->n), a->sample_rate, kAudioRate) : std::vector<int16_t>{};
+  }
+};
+
 std::unique_ptr<AsrClient> MakeSherpaAsr(const std::string& dir) {
-  static std::mutex mu;
-  static std::map<std::string, std::shared_ptr<SherpaAsr>> loaded;
-  std::lock_guard l(mu);
-  auto& a = loaded[dir];
-  if (!a) a = std::make_shared<SherpaAsr>(dir);
-  struct Ref : AsrClient {
-    std::shared_ptr<SherpaAsr> a;
-    std::string Transcribe(const std::vector<int16_t>& p) override { return a->Transcribe(p); }
-  };
-  auto r = std::make_unique<Ref>();
-  r->a = a;
-  return r;
+  auto c = std::make_unique<SherpaAsr>();
+  c->m = Load<AsrModel>(dir);
+  return c;
+}
+std::unique_ptr<TtsClient> MakeSherpaTts(const std::string& dir) {
+  auto c = std::make_unique<SherpaTts>();
+  c->m = Load<TtsModel>(dir);
+  return c;
 }
 
 std::vector<int16_t> ReadWav(const std::string& path) {

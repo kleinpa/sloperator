@@ -90,3 +90,21 @@ http_archive(
     strip_prefix = "sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8",
     urls = ["https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8.tar.bz2"],
 )
+
+# Piper lessac (medium), 22 kHz: ~65 MB, fast on CPU.
+http_archive(
+    name = "piper_lessac",
+    build_file_content = 'filegroup(name = "model", srcs = glob(["**"]), visibility = ["//visibility:public"])\nexports_files(["tokens.txt"])',
+    sha256 = "9e3febfacf0abf4270172d2958bcec246032b7e88efc2720840cc80c93de334e",
+    strip_prefix = "vits-piper-en_US-lessac-medium",
+    urls = ["https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-en_US-lessac-medium.tar.bz2"],
+)
+
+# Kokoro v0.19 int8, 11 voices: ~130 MB, more natural, ~5x slower than Piper. Optional.
+http_archive(
+    name = "kokoro_en",
+    build_file_content = 'filegroup(name = "model", srcs = glob(["**"]), visibility = ["//visibility:public"])\nexports_files(["tokens.txt"])',
+    sha256 = "c9f0dd393615805b0bab050c340834d5e684e732aec91c0e860cd30e982c08bd",
+    strip_prefix = "kokoro-int8-en-v0_19",
+    urls = ["https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/kokoro-int8-en-v0_19.tar.bz2"],
+)

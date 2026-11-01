@@ -34,7 +34,9 @@ struct Config {
   nlohmann::json options = {{"temperature", 0.3}, {"top_p", 0.8},
                             {"top_k", 20}, {"num_ctx", 4096}};
   nlohmann::json think;  // null = don't send
-  std::string stt_model;  // sherpa model dir; empty = Wyoming `whisper`
+  std::string stt_model, tts_model;  // sherpa model dirs; empty = Wyoming
+  double tts_speed = 1;
+  int tts_speaker = 0;               // multi-voice models (Kokoro)
   int max_calls = 1, history_turns = 8, threads = 4;  // threads: in-process models
   double tts_rms = 4000;  // speech loudness, ~-18 dBFS
   VadParams vad;
@@ -77,6 +79,8 @@ std::vector<int16_t> ReadWav(const std::string& path);  // any rate → kAudioRa
 std::unique_ptr<AsrClient> MakeAsr();  // in-process if g_cfg.stt_model, else Wyoming
 std::unique_ptr<AsrClient> MakeSherpaAsr(const std::string& model_dir);
 std::unique_ptr<AsrClient> MakeWyomingAsrClient();
+std::unique_ptr<TtsClient> MakeTts();  // in-process if g_cfg.tts_model, else Wyoming
+std::unique_ptr<TtsClient> MakeSherpaTts(const std::string& model_dir);
 std::unique_ptr<TtsClient> MakeWyomingTtsClient();
 std::unique_ptr<LlmClient> MakeOllamaClient();
 

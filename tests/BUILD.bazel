@@ -45,10 +45,13 @@ cc_test(
         "@moonshine_base_en//:model",
         "@moonshine_base_en//:test_wavs/0.wav",
         "@moonshine_base_en//:tokens.txt",
+        "@piper_lessac//:model",
+        "@piper_lessac//:tokens.txt",
         "@silero_vad//file",
         "@silero_vad_wav//file",
     ],
     env = {
+        "TTS_MODEL": "$(rlocationpath @piper_lessac//:tokens.txt)",
         "STT_MODEL": "$(rlocationpath @moonshine_base_en//:tokens.txt)",
         "STT_WAV": "$(rlocationpath @moonshine_base_en//:test_wavs/0.wav)",
         "VAD_MODEL": "$(rlocationpath @silero_vad//file)",
@@ -73,6 +76,28 @@ cc_test(
     env = {
         "STT_MODEL": "$(rlocationpath @parakeet_tdt_v2//:tokens.txt)",
         "STT_WAV": "$(rlocationpath @moonshine_base_en//:test_wavs/0.wav)",
+    },
+    tags = ["manual"],
+    deps = [
+        "//:bot_core",
+        "@googletest//:gtest_main",
+    ],
+)
+
+# Kokoro TTS round trip (130 MB download): bazel test //tests:test_sherpa_kokoro
+cc_test(
+    name = "test_sherpa_kokoro",
+    srcs = ["test_sherpa.cc"],
+    args = ["--gtest_filter=SherpaTts.*"],
+    data = [
+        "@kokoro_en//:model",
+        "@kokoro_en//:tokens.txt",
+        "@moonshine_base_en//:model",
+        "@moonshine_base_en//:tokens.txt",
+    ],
+    env = {
+        "STT_MODEL": "$(rlocationpath @moonshine_base_en//:tokens.txt)",
+        "TTS_MODEL": "$(rlocationpath @kokoro_en//:tokens.txt)",
     },
     tags = ["manual"],
     deps = [
