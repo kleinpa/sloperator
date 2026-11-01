@@ -64,6 +64,15 @@ struct LlmClient {
   virtual LlmReply Chat(const nlohmann::json& messages,
                         std::function<bool(const std::string&)> say) = 0;
 };
+// Voice activity: feed 20 ms frames; true when `utt` holds a full utterance.
+struct VadEngine {
+  virtual ~VadEngine() = default;
+  virtual bool Push(const int16_t* s, int n, std::vector<int16_t>& utt) = 0;
+  virtual void Reset() = 0;
+};
+std::unique_ptr<VadEngine> MakeVad();  // Silero if g_cfg.vad.model, else energy
+std::unique_ptr<VadEngine> MakeSileroVad(const VadParams&);
+std::vector<int16_t> ReadWav(const std::string& path);  // any rate → kAudioRate
 std::unique_ptr<AsrClient> MakeWyomingAsrClient();
 std::unique_ptr<TtsClient> MakeWyomingTtsClient();
 std::unique_ptr<LlmClient> MakeOllamaClient();
@@ -93,7 +102,7 @@ class Session {
   std::unique_ptr<AsrClient> asr_;
   std::unique_ptr<TtsClient> tts_;
   std::unique_ptr<LlmClient> llm_;
-  Vad vad_;
+  std::unique_ptr<VadEngine> vad_ = MakeVad();
   nlohmann::json history_ = nlohmann::json::array();
   std::thread thread_;
   std::queue<std::vector<int16_t>> pending_;

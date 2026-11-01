@@ -41,7 +41,8 @@ void LoadConfig(const std::string& text) {
   get(y, "max_calls", c.max_calls), get(y, "history_turns", c.history_turns);
   get(y, "tts_rms", c.tts_rms), get(y, "directory", c.directory);
   if (y["think"]) c.think = Scalar(y["think"]);
-  if (auto v = y["vad"]) get(v, "threshold", c.vad.threshold), get(v, "silence_ms", c.vad.silence_ms),
+  if (auto v = y["vad"]) get(v, "model", c.vad.model), get(v, "prob", c.vad.prob),
+                         get(v, "threshold", c.vad.threshold), get(v, "silence_ms", c.vad.silence_ms),
                          get(v, "min_speech_ms", c.vad.min_speech_ms);
   if (auto o = y["options"]) for (auto kv : o) c.options[kv.first.as<std::string>()] = Scalar(kv.second);
 }
@@ -197,6 +198,20 @@ struct Ollama : LlmClient {
   }
 };
 
+struct EnergyVad : VadEngine {
+  Vad v;
+  bool Push(const int16_t* s, int n, std::vector<int16_t>& utt) override {
+    return v.ProcessFrame(s, n) && (utt = std::move(v.ready), true);
+  }
+  void Reset() override { v.Reset(); }
+};
+std::unique_ptr<VadEngine> MakeVad() {
+  if (!g_cfg.vad.model.empty()) return MakeSileroVad(g_cfg.vad);
+  auto e = std::make_unique<EnergyVad>();
+  e->v.p = g_cfg.vad;
+  return e;
+}
+
 std::unique_ptr<AsrClient> MakeWyomingAsrClient() { return std::make_unique<WyomingAsr>(); }
 std::unique_ptr<TtsClient> MakeWyomingTtsClient() { return std::make_unique<WyomingTts>(); }
 std::unique_ptr<LlmClient> MakeOllamaClient() { return std::make_unique<Ollama>(); }
@@ -243,7 +258,7 @@ static auto ThinkingBeeps(int ms) { return Tone(220, 80, 30, .08f, ms, 600); }
 Session::Session(std::string caller, TransferFn transfer, std::unique_ptr<AsrClient> asr,
                  std::unique_ptr<TtsClient> tts, std::unique_ptr<LlmClient> llm)
     : caller_(std::move(caller)), transfer_(std::move(transfer)), asr_(std::move(asr)),
-      tts_(std::move(tts)), llm_(std::move(llm)) { vad_.p = g_cfg.vad; }
+      tts_(std::move(tts)), llm_(std::move(llm)) {}
 
 Session::~Session() {
   active = false;
@@ -262,9 +277,10 @@ void Session::Start() {
 }
 
 void Session::ProcessRxFrame(const int16_t* s, int n) {
-  if (audio_out.Size()) return vad_.Reset();  // half-duplex: deaf while speaking
-  if (!vad_.ProcessFrame(s, n)) return;
-  { std::lock_guard l(mu_); pending_.push(std::move(vad_.ready)); }
+  std::vector<int16_t> utt;
+  if (audio_out.Size()) return vad_->Reset();  // half-duplex: deaf while speaking
+  if (!vad_->Push(s, n, utt)) return;
+  { std::lock_guard l(mu_); pending_.push(std::move(utt)); }
   cv_.notify_one();
 }
 

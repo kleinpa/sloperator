@@ -87,9 +87,11 @@ inline std::vector<std::string> SplitSentences(std::string& buf, bool soft = fal
 // ── VAD ───────────────────────────────────────────────────────────────────────
 
 struct VadParams {
-  double threshold = 500;  // RMS of a voiced frame
+  double threshold = 500;  // energy VAD: RMS of a voiced frame
   int silence_ms = 600;    // trailing silence that ends an utterance
   int min_speech_ms = 200; // shorter bursts are dropped
+  std::string model;       // Silero .onnx; empty = energy VAD
+  double prob = 0.5;       // Silero speech probability threshold
 };
 
 // Energy VAD. Feed 20 ms frames; returns true when `ready` holds an utterance.

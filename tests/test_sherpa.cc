@@ -1,12 +1,31 @@
-// test_sherpa.cc — prebuilt sherpa-onnx links, loads, and runs onnxruntime-free code.
+// test_sherpa.cc — in-process sherpa-onnx models against real model files.
 
 #include <gtest/gtest.h>
 
-#include "sherpa-onnx/c-api/cxx-api.h"
+#include "bot_core.h"
 
-TEST(Sherpa, LoadsAndResamples) {
-  EXPECT_STREQ(SherpaOnnxGetVersionStr(), "1.13.8");
-  auto r = sherpa_onnx::cxx::LinearResampler::Create(22050, 16000, 0.99f * 8000, 6);
-  std::vector<float> in(22050, 0.5f);
-  EXPECT_NEAR(r.Resample(in.data(), in.size(), true).size(), 16000u, 2);
+static std::string Runfile(const char* env) { return std::string(getenv("TEST_SRCDIR")) + "/" + getenv(env); }
+
+// Utterances found when streaming `pcm` in 20 ms frames, then 1 s of silence.
+static int Utterances(VadEngine& v, std::vector<int16_t> pcm) {
+  pcm.resize(pcm.size() + kAudioRate);
+  std::vector<int16_t> utt;
+  int n = 0;
+  for (size_t i = 0; i + kFrameSamples <= pcm.size(); i += kFrameSamples) n += v.Push(&pcm[i], kFrameSamples, utt);
+  return n;
+}
+
+static std::vector<int16_t> Tone(int ms) {
+  std::vector<int16_t> v(ms * kAudioRate / 1000);
+  for (size_t i = 0; i < v.size(); i++) v[i] = int16_t(8000 * std::sin(2 * M_PI * 440 * i / kAudioRate));
+  return v;
+}
+
+TEST(SileroVad, FindsSpeechIgnoresTones) {
+  VadParams p;
+  p.model = Runfile("VAD_MODEL");
+  EXPECT_GE(Utterances(*MakeSileroVad(p), ReadWav(Runfile("SPEECH_WAV"))), 3);
+  EXPECT_EQ(Utterances(*MakeSileroVad(p), Tone(2000)), 0);
+  g_cfg = {};  // energy VAD, for contrast: a tone opens a turn
+  EXPECT_EQ(Utterances(*MakeVad(), Tone(2000)), 1);
 }

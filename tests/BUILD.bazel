@@ -37,12 +37,20 @@ cc_test(
     ],
 )
 
-# Links and loads the prebuilt sherpa-onnx/onnxruntime shared libs.
+# In-process models (sherpa-onnx) against real model files.
 cc_test(
     name = "test_sherpa",
     srcs = ["test_sherpa.cc"],
+    data = [
+        "@silero_vad//file",
+        "@silero_vad_wav//file",
+    ],
+    env = {
+        "VAD_MODEL": "$(rlocationpath @silero_vad//file)",
+        "SPEECH_WAV": "$(rlocationpath @silero_vad_wav//file)",
+    },
     deps = [
+        "//:bot_core",
         "@googletest//:gtest_main",
-        "@sherpa_onnx",
     ],
 )
