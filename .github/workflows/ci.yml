@@ -32,7 +32,7 @@ jobs:
           repository-cache: true
 
       - name: Run unit tests
-        run: bazel test -c opt //tests:test_chatbot --test_output=errors
+        run: bazel test -c opt //tests:all --test_output=errors
 
   publish:
     name: Push container image
