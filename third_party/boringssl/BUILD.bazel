@@ -1,4 +1,0 @@
-exports_files([
-    "remove_werror.patch",
-    "fix_generic_cxx.patch",
-])

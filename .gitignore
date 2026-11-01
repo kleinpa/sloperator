@@ -7,3 +7,4 @@
 
 # Bazel symlinks
 /bazel-*
+user.bazelrc

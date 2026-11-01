@@ -6,7 +6,7 @@ filegroup(
     visibility = ["//visibility:private"],
 )
 
-# PJSIP 2.14.1 — stripped down to SIP signalling + G.722 wideband audio only.
+# PJSIP 2.17 — stripped down to SIP signalling + G.722 wideband audio only.
 #
 # What we keep vs remove:
 #   KEEP    G.722 wideband (16 kHz)  — the only codec used (payload type 9)
@@ -24,10 +24,6 @@ filegroup(
 # Using only --disable-video prevents use of those libs while keeping them
 # compilable so the install step succeeds.
 #
-# PJSIP installs static libs with a platform-specific arch suffix, e.g.
-#   libpjsua2-x86_64-unknown-linux-gnu.a
-# The postfix_script creates symlinks without the arch suffix so that
-# out_static_libs can use portable names.
 configure_make(
     name = "pjsip",
     lib_source = ":all_srcs",
@@ -77,36 +73,34 @@ configure_make(
     # PJSIP's own "pjsip/" build subdirectory, causing "make install" to cp
     # files to themselves. Use a name that does not exist as a PJSIP source dir.
     install_prefix = "pjproject_install",
-    # make install only copies the main PJSIP libs; bundled third-party libs
-    # (srtp, resample, webrtc, etc.) remain in third_party/lib/.  Copy them
-    # to the install prefix so out_static_libs can find them.
-    postfix_script = "cp $$BUILD_TMPDIR/third_party/lib/*.a $$BUILD_TMPDIR/$$INSTALL_PREFIX/lib/",
-    #   libpjsua2-x86_64-unknown-linux-gnu.a
-    # We target linux/x86_64 only, so hardcode the suffix directly.
+    # make install skips bundled third-party libs (srtp, resample, webrtc);
+    # copy them over, then strip the arch triple so names are portable.
+    postfix_script = "cp $$BUILD_TMPDIR/third_party/lib/*.a $$INSTALLDIR/lib/ && " +
+                     "for f in $$INSTALLDIR/lib/lib*-*-linux-gnu.a; do mv $$f $${f%-*-*-linux-gnu.a}.a; done",
     out_static_libs = [
         # pjsua2 C++ wrapper (needed by main.cpp and modem_client.cpp)
-        "libpjsua2-x86_64-unknown-linux-gnu.a",
+        "libpjsua2.a",
         # pjsua C API
-        "libpjsua-x86_64-unknown-linux-gnu.a",
+        "libpjsua.a",
         # SIP stack
-        "libpjsip-ua-x86_64-unknown-linux-gnu.a",
-        "libpjsip-simple-x86_64-unknown-linux-gnu.a",
-        "libpjsip-x86_64-unknown-linux-gnu.a",
+        "libpjsip-ua.a",
+        "libpjsip-simple.a",
+        "libpjsip.a",
         # Media: codec framework + conference bridge + audio device manager
-        "libpjmedia-codec-x86_64-unknown-linux-gnu.a",
-        "libpjmedia-videodev-x86_64-unknown-linux-gnu.a",
-        "libpjmedia-x86_64-unknown-linux-gnu.a",
-        "libpjmedia-audiodev-x86_64-unknown-linux-gnu.a",
+        "libpjmedia-codec.a",
+        "libpjmedia-videodev.a",
+        "libpjmedia.a",
+        "libpjmedia-audiodev.a",
         # NAT traversal (required by pjmedia transport layer)
-        "libpjnath-x86_64-unknown-linux-gnu.a",
+        "libpjnath.a",
         # Utility and base libraries
-        "libpjlib-util-x86_64-unknown-linux-gnu.a",
-        "libpj-x86_64-unknown-linux-gnu.a",
+        "libpjlib-util.a",
+        "libpj.a",
         # Bundled third-party libraries (copied by postfix_script from
         # third_party/lib/ since make install doesn't install them).
-        "libsrtp-x86_64-unknown-linux-gnu.a",
-        "libresample-x86_64-unknown-linux-gnu.a",
-        "libwebrtc-x86_64-unknown-linux-gnu.a",
+        "libsrtp.a",
+        "libresample.a",
+        "libwebrtc.a",
     ],
     # No -lasound: --disable-sound means modem-server has no ALSA runtime dep.
     # @libuuid//:libuuid is listed here so it propagates transitively to any
