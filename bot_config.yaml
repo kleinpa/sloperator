@@ -29,7 +29,8 @@ model: qwen3:4b-instruct
 greeting: Hello, Example Co, how can I help you?
 # fallback: Sorry, I'm having trouble right now. Please try again in a moment.  # LLM down
 # transfer_say: Connecting you to {} now.   # said if the LLM transfers silently; {} = department, "" = say nothing
-# cues: true                       # answer/listening chimes and thinking beeps
+# cues: true                       # A-major bell cues: answer, heard, listening, thinking, transfer
+# cue_db: -6                       # cue loudness relative to speech
 
 system_prompt: |
   You are the phone receptionist for Example Co.

@@ -41,6 +41,7 @@ struct Config {
   nlohmann::json keep_alive = -1;  // Ollama: -1 = never unload
   int llm_timeout_s = 120, service_timeout_s = 30;
   bool cues = true;                // chimes and thinking beeps
+  double cue_db = -6;              // cue loudness relative to speech (tts_rms)
   int chunk_first_words = 0, chunk_words = 0;  // >0: TTS may break at , ; : (sooner, choppier)
   std::string stt_model, tts_model;  // sherpa model dirs; empty = Wyoming
   double tts_speed = 1;               // tempo only (pitch kept)
@@ -59,6 +60,8 @@ std::string DumpConfig();             // effective config, loadable by LoadConfi
 std::vector<std::string> ConfigKeys();  // every settable key ("vad.model", ...)
 // Full system prompt: prompt + knowledge + transfer instructions.
 std::string SystemPrompt();
+// Musical cues (answer, heard, listening, thinking, transfer), built once from g_cfg.
+const std::map<std::string, std::vector<int16_t>>& Cues();
 // Loads every model and synthesizes the greeting; call before taking calls.
 void Warmup();
 
@@ -115,7 +118,7 @@ class Session {
  private:
   void Run();
   void Say(const std::string& text);
-  void Cue(const std::vector<int16_t>& tone);  // unless cues: false
+  void Cue(const std::string& name);           // unless cues: false
   void Thinking(bool on);                      // beeps whenever playback runs dry
   nlohmann::json Messages() const;
 

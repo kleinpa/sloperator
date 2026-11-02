@@ -252,6 +252,20 @@ options: {num_ctx: 2048, temperature: 0.5, stop: "x"}
   EXPECT_NE(p.find("Departments: Clock, Peter."), std::string::npos);
 }
 
+// Every cue fades in and out to silence (no clicks) and sits at a level set
+// relative to speech, so changing tts_rms moves them together.
+TEST(Cues, ClickFreeAndLevelledToSpeech) {
+  g_cfg = {};
+  for (auto& [name, v] : Cues()) {
+    ASSERT_FALSE(v.empty()) << name;
+    EXPECT_LT(std::abs(v.front()), 100) << name;
+    EXPECT_LT(std::abs(v.back()), 100) << name;
+    for (size_t i = 1; i < v.size(); i++) ASSERT_LT(std::abs(v[i] - v[i - 1]), 6000) << name << " jumps at " << i;
+  }
+  double db = 20 * std::log10(RmsEnergy(Cues().at("answer").data(), Cues().at("answer").size()) / g_cfg.tts_rms);
+  EXPECT_NEAR(db, g_cfg.cue_db, 0.5);
+}
+
 TEST(Config, ReportsUnknownKeys) {
   g_cfg = {};
   auto u = LoadConfig("greeting_prompt: old schema\nvad: {treshold: 1, silence_ms: 300}\noptions: {anything: 1}\n");

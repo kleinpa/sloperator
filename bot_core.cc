@@ -39,7 +39,7 @@ static std::vector<std::pair<std::string, Field>> Fields(Config& c) {
           {"transfer_intro", &c.transfer_intro}, {"transfer_say", &c.transfer_say}, {"cues", &c.cues},
           {"keep_alive", &c.keep_alive}, {"llm_timeout_s", &c.llm_timeout_s},
           {"service_timeout_s", &c.service_timeout_s}, {"chunk_first_words", &c.chunk_first_words},
-          {"chunk_words", &c.chunk_words}};
+          {"chunk_words", &c.chunk_words}, {"cue_db", &c.cue_db}};
 }
 static json::json_pointer Ptr(std::string k) { return json::json_pointer("/" + (std::replace(k.begin(), k.end(), '.', '/'), k)); }
 
@@ -330,27 +330,55 @@ void Warmup() {
 }
 
 // ── Audio cues ────────────────────────────────────────────────────────────────
+// A major throughout, one soft bell timbre, levels in dB relative to speech.
 
-// Decaying sine burst.
-static std::vector<int16_t> Tone(float hz, float ms, float decay, float gain) {
-  std::vector<int16_t> v(int(ms) * kAudioRate / 1000);
-  for (size_t i = 0; i < v.size(); i++) {
-    float t = float(i) / kAudioRate;
-    v[i] = int16_t(32767 * gain * std::exp(-decay * t) * std::sin(2 * M_PI * hz * t));
+struct Note { int semi; float at_ms, ms; };  // semitones from A4 (440 Hz)
+
+// Bell: partials 1-3, higher ones dying faster; 3 ms attack, raised-cosine tail
+// to exactly zero (no clicks). Notes may overlap and ring into each other.
+static std::vector<int16_t> Bell(std::initializer_list<Note> notes, float db) {
+  auto at = [](float ms) { return size_t(ms * kAudioRate / 1000); };
+  size_t n = 0;
+  for (auto& x : notes) n = std::max(n, at(x.at_ms + x.ms));
+  std::vector<float> mix(n);
+  for (auto& x : notes) {
+    float hz = 440 * std::pow(2.f, x.semi / 12.f), T = x.ms / 1000;
+    size_t len = at(x.ms), tail = std::min(len, at(10)), a = at(3);
+    for (size_t i = 0; i < len; i++) {
+      float t = float(i) / kAudioRate, s = 0;
+      for (int k = 1; k <= 3; k++) s += std::pow(.3f, k - 1) * std::exp(-4 * k * t / T) * std::sin(2 * M_PI * k * hz * t);
+      float env = std::min(1.f, float(i) / a);
+      if (i + tail >= len) env *= .5f * (1 + std::cos(M_PI * (i + tail - len + 1) / tail));
+      mix[at(x.at_ms) + i] += s * env;
+    }
   }
+  double e = 0;
+  for (float x : mix) e += x * x;
+  float g = g_cfg.tts_rms * std::pow(10.f, (g_cfg.cue_db + db) / 20) / std::sqrt(e / n);
+  std::vector<int16_t> v(n);
+  for (size_t i = 0; i < n; i++) v[i] = int16_t(std::clamp(mix[i] * g, -29000.f, 29000.f));
   return v;
 }
-static std::vector<int16_t> AnswerChime() {
-  auto a = Tone(659.3f, 120, 6, .35f), b = Tone(880, 280, 6, .35f);
-  return a.insert(a.end(), b.begin(), b.end()), a;
-}
-static auto ListeningChime() { return Tone(1047, 80, 10, .3f); }
-static auto SegmentChime() { return Tone(330, 60, 20, .2f); }
-// One 600 ms period, beep last: a gap stays silent for ~0.5 s before beeping.
-static std::vector<int16_t> ThinkingLoop() {
-  auto b = Tone(220, 80, 30, .08f);
-  std::vector<int16_t> v(kAudioRate * 600 / 1000 - b.size());
-  return v.insert(v.end(), b.begin(), b.end()), v;
+
+const std::map<std::string, std::vector<int16_t>>& Cues() {
+  static const auto c = [] {
+    std::map<std::string, std::vector<int16_t>> m = {
+        {"answer", Bell({{0, 0, 400}, {4, 90, 400}, {7, 180, 400}, {12, 270, 500}}, 0)},
+        {"heard", Bell({{7, 0, 140}, {0, 70, 220}}, -9)},
+        {"listening", Bell({{12, 0, 160}, {16, 70, 220}}, -6)},
+        {"transfer", Bell({{12, 0, 400}, {7, 100, 400}, {4, 200, 400}, {0, 300, 550}}, -3)},
+    };
+    // Thinking: one soft arpeggio note per 600 ms, note last, so a short gap
+    // stays silent; the loop restarts each gap.
+    for (int semi : {-12, -8, -5, -8}) {
+      auto note = Bell({{semi, 0, 180}}, -14);
+      auto& t = m["thinking"];
+      t.resize(t.size() + kAudioRate * 600 / 1000 - note.size());
+      t.insert(t.end(), note.begin(), note.end());
+    }
+    return m;
+  }();
+  return c;
 }
 
 // ── Session ───────────────────────────────────────────────────────────────────
@@ -372,12 +400,12 @@ Session::~Session() {
 }
 
 void Session::Start() {
-  Cue(AnswerChime());
+  Cue("answer");
   if (!g_greeting_pcm.empty()) {
     audio_out.Push(g_greeting_pcm);
     history_.push_back({{"role", "assistant"}, {"content", g_cfg.greeting}});
   }
-  Cue(ListeningChime());
+  Cue("listening");
   thread_ = std::thread([this] { Run(); });
 }
 
@@ -389,11 +417,11 @@ void Session::ProcessRxFrame(const int16_t* s, int n) {
   cv_.notify_one();
 }
 
-void Session::Cue(const std::vector<int16_t>& v) {
-  if (g_cfg.cues) audio_out.Push(v);
+void Session::Cue(const std::string& name) {
+  if (g_cfg.cues) audio_out.Push(Cues().at(name));
 }
 
-void Session::Thinking(bool on) { audio_out.SetFiller(on && g_cfg.cues ? ThinkingLoop() : std::vector<int16_t>{}); }
+void Session::Thinking(bool on) { audio_out.SetFiller(on && g_cfg.cues ? Cues().at("thinking") : std::vector<int16_t>{}); }
 
 void Session::Say(const std::string& text) {
   LOG(INFO) << caller_ << " [tts] " << text;
@@ -419,7 +447,7 @@ void Session::Run() {
       pcm = std::move(pending_.front());
       pending_.pop();
     }
-    Cue(SegmentChime());
+    Cue("heard");
     Thinking(true);
     std::string text = asr_->Transcribe(pcm);
     Thinking(false);
@@ -445,6 +473,7 @@ void Session::Run() {
         if (auto at = t.find("{}"); at != std::string::npos) t.replace(at, 2, it->first);
         Say(t);
       }
+      Cue("transfer");
       while (active && audio_out.Size()) std::this_thread::sleep_for(std::chrono::milliseconds(20));
       LOG(INFO) << caller_ << " [call] transfer " << it->first << " → " << it->second;
       transfer_(it->second);
@@ -452,7 +481,7 @@ void Session::Run() {
       return;
     }
     if (!r.transfer.empty()) LOG(WARNING) << caller_ << " [call] unknown department: " << r.transfer;
-    Cue(ListeningChime());
+    Cue("listening");
   }
 }
 
