@@ -46,8 +46,10 @@ struct Config {
 extern Config g_cfg;
 extern std::vector<int16_t> g_greeting_pcm;  // synthesized once by Warmup()
 
-// Parses YAML text into g_cfg (throws YAML::Exception).
-void LoadConfig(const std::string& yaml);
+// Merges YAML text into g_cfg (throws YAML::Exception); returns unknown keys.
+std::vector<std::string> LoadConfig(const std::string& yaml);
+std::string DumpConfig();             // effective config, loadable by LoadConfig
+std::vector<std::string> ConfigKeys();  // every settable key ("vad.model", ...)
 // Full system prompt: prompt + knowledge + transfer instructions.
 std::string SystemPrompt();
 // Loads every model and synthesizes the greeting; call before taking calls.

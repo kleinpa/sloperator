@@ -12,6 +12,8 @@
 
 #include <chrono>
 #include <filesystem>
+#include <fstream>
+#include <regex>
 
 #include "bot_core.h"
 
@@ -215,6 +217,36 @@ options: {num_ctx: 2048, temperature: 0.5, stop: "x"}
   auto p = SystemPrompt();
   EXPECT_NE(p.find("Open 9 to 5."), std::string::npos);
   EXPECT_NE(p.find("Departments: Clock, Peter."), std::string::npos);
+}
+
+TEST(Config, ReportsUnknownKeys) {
+  g_cfg = {};
+  auto u = LoadConfig("greeting_prompt: old schema\nvad: {treshold: 1, silence_ms: 300}\noptions: {anything: 1}\n");
+  EXPECT_EQ(u, (std::vector<std::string>{"greeting_prompt", "vad.treshold"}));
+  EXPECT_EQ(g_cfg.vad.silence_ms, 300);
+}
+
+TEST(Config, DumpLoadsBackIdentically) {
+  g_cfg = {};
+  LoadConfig("pbx: pbx.lan\ntts_varispeed: 0.726\ndirectory: {Clock: \"0042\"}\nthink: false\nvad: {prob: 0.4}\n");
+  auto dump = DumpConfig();
+  g_cfg = {};
+  EXPECT_TRUE(LoadConfig(dump).empty());
+  EXPECT_EQ(DumpConfig(), dump);
+  EXPECT_EQ(g_cfg.directory.at("Clock"), "0042");
+}
+
+// The example config is the reference: every key documented, all of it valid.
+TEST(Config, ExampleDocumentsEveryKey) {
+  std::ifstream f(std::string(getenv("TEST_SRCDIR")) + "/" + getenv("BOT_CONFIG"));
+  std::string text((std::istreambuf_iterator<char>(f)), {});
+  ASSERT_FALSE(text.empty());
+  for (auto& k : ConfigKeys()) {
+    auto leaf = k.substr(k.rfind('.') + 1);
+    EXPECT_TRUE(std::regex_search(text, std::regex("(^|\\n)[ #]*" + leaf + ":"))) << k << " undocumented";
+  }
+  g_cfg = {};
+  EXPECT_EQ(LoadConfig(text), std::vector<std::string>{});
 }
 
 // ═════════════════════════════════════════════════════════════════════════════

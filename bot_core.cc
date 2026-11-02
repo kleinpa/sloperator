@@ -8,6 +8,7 @@
 #include <yaml-cpp/yaml.h>
 
 #include <chrono>
+#include <variant>
 
 #include "absl/log/log.h"
 
@@ -21,31 +22,76 @@ std::vector<int16_t> g_greeting_pcm;
 
 // ── Config ────────────────────────────────────────────────────────────────────
 
-static json Scalar(const YAML::Node& n) {
+// Every config key ↔ Config field; dotted keys nest. LoadConfig, DumpConfig and
+// ConfigKeys all come from this one table, so nothing is settable in code only.
+using Field = std::variant<std::string*, int*, double*, std::map<std::string, std::string>*, json*>;
+static std::vector<std::pair<std::string, Field>> Fields(Config& c) {
+  return {{"whisper", &c.whisper}, {"ollama", &c.ollama}, {"piper", &c.piper}, {"pbx", &c.pbx},
+          {"model", &c.model}, {"think", &c.think}, {"options", &c.options},
+          {"system_prompt", &c.prompt}, {"knowledge", &c.knowledge}, {"directory", &c.directory},
+          {"greeting", &c.greeting}, {"fallback", &c.fallback}, {"language", &c.language},
+          {"stt_model", &c.stt_model}, {"tts_model", &c.tts_model}, {"tts_speed", &c.tts_speed},
+          {"tts_varispeed", &c.tts_varispeed}, {"tts_speaker", &c.tts_speaker}, {"tts_rms", &c.tts_rms},
+          {"threads", &c.threads}, {"max_calls", &c.max_calls}, {"history_turns", &c.history_turns},
+          {"vad.model", &c.vad.model}, {"vad.prob", &c.vad.prob}, {"vad.threshold", &c.vad.threshold},
+          {"vad.silence_ms", &c.vad.silence_ms}, {"vad.min_speech_ms", &c.vad.min_speech_ms}};
+}
+static json::json_pointer Ptr(std::string k) { return json::json_pointer("/" + (std::replace(k.begin(), k.end(), '.', '/'), k)); }
+
+// YAML → JSON; quoted scalars stay strings ("0042"), plain ones get typed.
+static json ToJson(const YAML::Node& n) {
+  if (n.IsMap()) { json j = json::object(); for (auto kv : n) j[kv.first.as<std::string>()] = ToJson(kv.second); return j; }
+  if (n.IsSequence()) { json j = json::array(); for (auto v : n) j.push_back(ToJson(v)); return j; }
+  if (!n.IsScalar()) return nullptr;
+  if (n.Tag() == "!") return n.as<std::string>();
   try { return n.as<long>(); } catch (...) {}
   try { return n.as<double>(); } catch (...) {}
   try { return n.as<bool>(); } catch (...) {}
   return n.as<std::string>();
 }
+static std::string Str(const json& v) { return v.is_string() ? v.get<std::string>() : v.dump(); }
 
-void LoadConfig(const std::string& text) {
-  YAML::Node y = YAML::Load(text);
-  auto get = [&](const YAML::Node& n, const char* k, auto& v) {
-    if (n[k]) v = n[k].as<std::decay_t<decltype(v)>>();
+std::vector<std::string> LoadConfig(const std::string& text) {
+  json y = ToJson(YAML::Load(text));
+  if (!y.is_object()) y = json::object();
+  auto fields = Fields(g_cfg);
+  for (auto& [k, f] : fields)
+    if (auto p = Ptr(k); y.contains(p) && !y[p].is_null())
+      std::visit([&](auto* d) {
+        using T = std::decay_t<decltype(*d)>;
+        auto& v = y[p];
+        if constexpr (std::is_same_v<T, std::string>) *d = Str(v);
+        else if constexpr (std::is_same_v<T, json>) v.is_object() && d->is_object() ? d->update(v) : void(*d = v);
+        else if constexpr (std::is_same_v<T, std::map<std::string, std::string>>) for (auto& [a, b] : v.items()) (*d)[a] = Str(b);
+        else *d = v.get<T>();
+      }, f);
+  std::vector<std::string> unknown;  // typos, or keys from an older schema
+  std::function<void(const json&, std::string)> walk = [&](const json& j, std::string at) {
+    for (auto& [k, v] : j.items()) {
+      auto key = at + k;
+      if (std::any_of(fields.begin(), fields.end(), [&](auto& f) { return f.first == key; })) continue;
+      if (v.is_object()) walk(v, key + ".");
+      else unknown.push_back(key);
+    }
   };
-  auto& c = g_cfg;
-  for (auto [k, v] : std::initializer_list<std::pair<const char*, std::string*>>{{"whisper", &c.whisper}, {"ollama", &c.ollama}, {"piper", &c.piper},
-                      {"pbx", &c.pbx}, {"model", &c.model}, {"stt_model", &c.stt_model}, {"tts_model", &c.tts_model}, {"language", &c.language},
-                      {"greeting", &c.greeting}, {"fallback", &c.fallback}, {"system_prompt", &c.prompt}, {"knowledge", &c.knowledge}})
-    get(y, k, *v);
-  get(y, "max_calls", c.max_calls), get(y, "history_turns", c.history_turns), get(y, "threads", c.threads);
-  get(y, "tts_rms", c.tts_rms), get(y, "directory", c.directory);
-  get(y, "tts_speed", c.tts_speed), get(y, "tts_speaker", c.tts_speaker), get(y, "tts_varispeed", c.tts_varispeed);
-  if (y["think"]) c.think = Scalar(y["think"]);
-  if (auto v = y["vad"]) get(v, "model", c.vad.model), get(v, "prob", c.vad.prob),
-                         get(v, "threshold", c.vad.threshold), get(v, "silence_ms", c.vad.silence_ms),
-                         get(v, "min_speech_ms", c.vad.min_speech_ms);
-  if (auto o = y["options"]) for (auto kv : o) c.options[kv.first.as<std::string>()] = Scalar(kv.second);
+  walk(y, "");
+  return unknown;
+}
+
+std::string DumpConfig() {
+  json j;
+  for (auto& [k, f] : Fields(g_cfg))
+    std::visit([&, k = k](auto* d) {
+      if constexpr (std::is_same_v<std::decay_t<decltype(*d)>, json>) { if (!d->is_null()) j[Ptr(k)] = *d; }
+      else j[Ptr(k)] = *d;
+    }, f);
+  return j.dump(2);  // JSON is YAML: feeds straight back into --config_file
+}
+
+std::vector<std::string> ConfigKeys() {
+  std::vector<std::string> k;
+  for (auto& [n, _] : Fields(g_cfg)) k.push_back(n);
+  return k;
 }
 
 std::string SystemPrompt() {

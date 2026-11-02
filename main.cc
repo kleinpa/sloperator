@@ -4,6 +4,7 @@
 
 #include <csignal>
 #include <fstream>
+#include <iostream>
 #include <sstream>
 
 #include "absl/flags/flag.h"
@@ -21,6 +22,7 @@ ABSL_FLAG(std::string, piper, "", "Wyoming TTS host:port (overrides config)");
 ABSL_FLAG(std::string, pbx, "", "SIP host for transfers (overrides config)");
 ABSL_FLAG(int, port, 5060, "SIP UDP listen port");
 ABSL_FLAG(std::string, public_addr, "", "Public IP for SDP/Contact (NAT)");
+ABSL_FLAG(bool, print_config, false, "Print the effective config (defaults + file + flags) and exit");
 
 static std::atomic_bool g_running{true};
 
@@ -35,7 +37,7 @@ int main(int argc, char* argv[]) {
   if (auto f = absl::GetFlag(FLAGS_config_file); !f.empty()) {
     std::stringstream ss;
     ss << std::ifstream(f).rdbuf();
-    try { LoadConfig(ss.str()); }
+    try { for (auto& k : LoadConfig(ss.str())) LOG(WARNING) << "[config] unknown key: " << k; }
     catch (const YAML::Exception& e) { LOG(FATAL) << "[config] " << f << ": " << e.what(); }
   }
   for (auto [flag, v] : std::initializer_list<std::pair<absl::Flag<std::string>*, std::string*>>{
@@ -43,6 +45,7 @@ int main(int argc, char* argv[]) {
                          {&FLAGS_piper, &g_cfg.piper}, {&FLAGS_pbx, &g_cfg.pbx}})
     if (auto s = absl::GetFlag(*flag); !s.empty()) *v = s;
 
+  if (absl::GetFlag(FLAGS_print_config)) return std::cout << DumpConfig() << "\n", 0;
   LOG(INFO) << "stt=" << g_cfg.whisper << " llm=" << g_cfg.ollama << " (" << g_cfg.model
             << ") tts=" << g_cfg.piper;
   Warmup();  // before SIP opens: no cold first call, greeting ready

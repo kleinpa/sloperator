@@ -24,6 +24,7 @@ cc_test(
     name = "test_e2e_sip",
     srcs = ["test_e2e_sip.cc"],
     data = [
+        "//:bot_config.yaml",
         "//:sloperator",
         "@moonshine_base_en//:model",
         "@moonshine_base_en//:tokens.txt",
@@ -32,6 +33,7 @@ cc_test(
         "@silero_vad//file",
     ],
     env = {
+        "BOT_CONFIG": "$(rlocationpath //:bot_config.yaml)",
         "STT_MODEL": "$(rlocationpath @moonshine_base_en//:tokens.txt)",
         "TTS_MODEL": "$(rlocationpath @piper_lessac//:tokens.txt)",
         "VAD_MODEL": "$(rlocationpath @silero_vad//file)",

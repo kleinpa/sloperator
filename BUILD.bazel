@@ -3,6 +3,8 @@ load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load", "oci_push")
 load("@rules_pkg//pkg:mappings.bzl", "pkg_files", "strip_prefix")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 
+exports_files(["bot_config.yaml"])
+
 # ── Shared header-only library ────────────────────────────────────────────────
 
 cc_library(
