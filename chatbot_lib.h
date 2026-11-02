@@ -36,6 +36,12 @@ inline std::vector<int16_t> Resample(const std::vector<int16_t>& in, int from,
   return out;
 }
 
+// Tape-style varispeed: f < 1 is slower *and* deeper, f > 1 chipmunk.
+// f = 16000/22050 recreates the old resampler bug's "derpy" voice.
+inline std::vector<int16_t> Varispeed(const std::vector<int16_t>& v, double f) {
+  return f == 1 ? v : Resample(v, int(std::lround(kAudioRate * f)), kAudioRate);
+}
+
 // Scales to `rms`, capped so peaks stay below ~-1 dBFS.
 inline void Normalize(std::vector<int16_t>& v, double rms) {
   double s = 0;

@@ -37,6 +37,14 @@ TEST(Resample, UnityGainAndPassthrough) {
   EXPECT_EQ(Resample(same, 16000, 16000), same);
 }
 
+TEST(Varispeed, OldBugVoiceIsSlowerAndDeeper) {
+  auto in = Sine(16000, 16000, 440);  // 1 s
+  auto out = Varispeed(in, 16000.0 / 22050);
+  EXPECT_NEAR(out.size(), 22050u, 2);       // 38% longer
+  EXPECT_NEAR(ZeroCrossings(out), 880, 4);  // same cycles, longer time: 440 → ~319 Hz
+  EXPECT_EQ(Varispeed(in, 1), in);
+}
+
 TEST(Normalize, HitsTargetRmsWithPeakCap) {
   auto quiet = Sine(16000, 16000, 300, 500);
   Normalize(quiet, 4000);

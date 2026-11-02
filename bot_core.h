@@ -36,7 +36,8 @@ struct Config {
                             {"top_k", 20}, {"num_ctx", 4096}};
   nlohmann::json think;  // null = don't send
   std::string stt_model, tts_model;  // sherpa model dirs; empty = Wyoming
-  double tts_speed = 1;
+  double tts_speed = 1;               // tempo only (pitch kept)
+  double tts_varispeed = 1;          // tempo + pitch; 0.726 = old derpy voice
   int tts_speaker = 0;               // multi-voice models (Kokoro)
   int max_calls = 1, history_turns = 8, threads = 4;  // threads: in-process models
   double tts_rms = 4000;  // speech loudness, ~-18 dBFS

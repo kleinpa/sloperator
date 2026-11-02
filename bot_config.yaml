@@ -4,7 +4,8 @@
 # Remove a line to use the Wyoming service below instead.
 stt_model: /models/moonshine       # or a Parakeet TDT dir (more accurate, ~650 MB)
 tts_model: /models/piper           # or a Kokoro dir (more natural, ~5x slower)
-# tts_speed: 1.0
+# tts_speed: 1.0                   # tempo only
+# tts_varispeed: 1.0               # tempo + pitch, like a tape; 0.726 = slow & derpy
 # tts_speaker: 0                   # voice id for multi-voice models (Kokoro)
 # threads: 4                       # per in-process model; = physical cores
 
