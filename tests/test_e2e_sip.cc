@@ -51,7 +51,21 @@ struct FakeLlm : LlmClient {
   LlmReply reply{"Hello there.", ""};
   std::vector<json> seen;  // messages per call
   std::atomic_int calls{0};
+  bool hang = false;  // block like a slow prompt eval until Cancel()
+  std::atomic_bool* canceled = nullptr;
+  std::mutex mu;
+  std::condition_variable cv;
+  void Cancel() override {
+    std::lock_guard l(mu);
+    if (canceled) *canceled = true;
+    cv.notify_all();
+  }
   LlmReply Chat(const json& m, std::function<bool(const std::string&)> say) override {
+    if (hang) {
+      std::unique_lock l(mu);
+      seen.push_back(m), cv.wait(l, [&] { return canceled && *canceled; });
+      return {};
+    }
     seen.push_back(m);
     if (!reply.text.empty()) say(reply.text);
     return calls++, reply;
@@ -150,6 +164,20 @@ TEST_F(PipelineTest, LlmFailureDoesNotLeaveBeepsQueued) {
   ASSERT_TRUE(WaitFor([&] { return s->audio_out.Size() < size_t(kAudioRate); }));
   Speak();
   EXPECT_TRUE(WaitFor([&] { return llm->calls == 2; }));
+}
+
+TEST_F(PipelineTest, HangupCancelsLlmMidPrompt) {
+  // Regression: a hung-up call's prompt eval kept the LLM busy for a minute,
+  // so the next caller queued behind it.
+  std::atomic_bool canceled{false};
+  llm->hang = true, llm->canceled = &canceled;
+  Start();
+  Speak();
+  ASSERT_TRUE(WaitFor([&] { std::lock_guard l(llm->mu); return !llm->seen.empty(); }));
+  auto t0 = std::chrono::steady_clock::now();
+  s.reset();  // what BotCall does on DISCONNECTED
+  EXPECT_TRUE(canceled);
+  EXPECT_LT(std::chrono::steady_clock::now() - t0, 1s);
 }
 
 TEST_F(PipelineTest, HistoryIsCapped) {

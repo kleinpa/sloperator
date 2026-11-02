@@ -149,6 +149,14 @@ struct WyomingTts : TtsClient {
 // ── Ollama /api/chat (NDJSON stream, optional transfer_call tool) ─────────────
 
 struct Ollama : LlmClient {
+  std::mutex mu;
+  httplib::Client* live = nullptr;  // in-flight request, for Cancel()
+  bool stopped = false;
+  void Cancel() override {
+    std::lock_guard l(mu);
+    stopped = true;
+    if (live) live->stop();  // also aborts prompt processing, before any token
+  }
   LlmReply Chat(const json& messages, std::function<bool(const std::string&)> say) override {
     json req = {{"model", g_cfg.model}, {"messages", messages}, {"options", g_cfg.options},
                 {"stream", true}, {"keep_alive", -1}};
@@ -169,6 +177,11 @@ struct Ollama : LlmClient {
     auto emit = [&](const std::string& s) { if (go) go = say(s), first = false; };
     httplib::Client cli(g_cfg.ollama);
     cli.set_connection_timeout(5), cli.set_read_timeout(120);
+    {
+      std::lock_guard l(mu);
+      if (stopped) return r;
+      live = &cli;
+    }
     httplib::Request q;
     q.method = "POST", q.path = "/api/chat", q.body = req.dump();
     q.headers = {{"Content-Type", "application/json"}};
@@ -192,7 +205,13 @@ struct Ollama : LlmClient {
     };
     httplib::Response res;
     httplib::Error err;
-    if (!cli.send(q, res, err) && go) LOG(ERROR) << "[llm] " << httplib::to_string(err);
+    bool sent = cli.send(q, res, err);
+    {
+      std::lock_guard l(mu);
+      live = nullptr;
+      if (stopped) return r;
+    }
+    if (!sent && go) LOG(ERROR) << "[llm] " << httplib::to_string(err);
     else if (res.status && res.status != 200) LOG(ERROR) << "[llm] HTTP " << res.status;
     if (auto s = CleanSentence(buf); !s.empty()) emit(s);
     return r;
@@ -267,9 +286,14 @@ Session::Session(std::string caller, TransferFn transfer, std::unique_ptr<AsrCli
     : caller_(std::move(caller)), transfer_(std::move(transfer)), asr_(std::move(asr)),
       tts_(std::move(tts)), llm_(std::move(llm)) {}
 
-Session::~Session() {
+void Session::Stop() {
   active = false;
   cv_.notify_all();
+  llm_->Cancel();
+}
+
+Session::~Session() {
+  Stop();
   if (thread_.joinable()) thread_.join();
 }
 
@@ -373,7 +397,7 @@ void BotCall::onCallState(pj::OnCallStateParam&) {
   LOG(INFO) << ci.remoteUri << " [call] " << ci.stateText;
   if (ci.state != PJSIP_INV_STATE_DISCONNECTED) return;
   port_.reset();
-  if (session_) session_->active = false;
+  if (session_) session_->Stop();
   std::thread([s = std::move(session_)] {}).detach();  // join off the PJSIP thread
   delete this;
 }
@@ -392,7 +416,7 @@ void BotCall::onCallMediaState(pj::OnCallMediaStateParam&) {
   auto ci = getInfo();
   for (unsigned i = 0; i < ci.media.size(); i++) {
     if (ci.media[i].type != PJMEDIA_TYPE_AUDIO) continue;
-    if (ci.media[i].status == PJSUA_CALL_MEDIA_NONE && session_) session_->active = false;
+    if (ci.media[i].status == PJSUA_CALL_MEDIA_NONE && session_) session_->Stop();
     auto* aud = ci.media[i].status == PJSUA_CALL_MEDIA_ACTIVE ? dynamic_cast<pj::AudioMedia*>(getMedia(i)) : nullptr;
     if (!aud) continue;
     if (!session_) {

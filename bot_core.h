@@ -66,6 +66,7 @@ struct LlmClient {
   // Streams sentences to `say`; it returns false to abort.
   virtual LlmReply Chat(const nlohmann::json& messages,
                         std::function<bool(const std::string&)> say) = 0;
+  virtual void Cancel() {}  // any thread: abort in-flight and future Chats
 };
 // Voice activity: feed 20 ms frames; true when `utt` holds a full utterance.
 struct VadEngine {
@@ -94,6 +95,7 @@ class Session {
   Session(const Session&) = delete;
 
   void Start();
+  void Stop();  // hangup: ends the pipeline, aborting any LLM request
   void ProcessRxFrame(const int16_t* s, int n);  // PJSIP audio thread
 
   AudioQueue audio_out;
