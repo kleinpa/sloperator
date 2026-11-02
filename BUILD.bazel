@@ -1,5 +1,6 @@
 load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_library")
-load("@rules_oci//oci:defs.bzl", "oci_image", "oci_push")
+load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load", "oci_push")
+load("@rules_pkg//pkg:mappings.bzl", "pkg_files", "strip_prefix")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 
 # ── Shared header-only library ────────────────────────────────────────────────
@@ -58,18 +59,52 @@ cc_binary(
 
 # ── OCI container image ───────────────────────────────────────────────────────
 
+# Binary + sherpa/onnxruntime libs + default models (see bot_config.yaml):
+#   /models/silero_vad.onnx  /models/moonshine  /models/piper
+
 pkg_tar(
     name = "sloperator_layer",
     srcs = [":sloperator"],
     package_dir = "/usr/local/bin",
 )
 
+pkg_files(
+    name = "libs",
+    srcs = ["@sherpa_onnx//:libs"],
+    prefix = "usr/local",
+    strip_prefix = strip_prefix.from_pkg(),
+)
+
+[pkg_files(
+    name = "model_" + d,
+    srcs = [src],
+    prefix = "models" + ("/" + d if d != "vad" else ""),
+    strip_prefix = strip_prefix.from_pkg(),
+) for d, src in [
+    ("vad", "@silero_vad//file"),
+    ("moonshine", "@moonshine_base_en//:model"),
+    ("piper", "@piper_lessac//:model"),
+]]
+
+# Separate layers: models and libs change rarely, so pushes stay small.
+pkg_tar(name = "libs_layer", srcs = [":libs"])
+
+pkg_tar(name = "models_layer", srcs = [":model_vad", ":model_moonshine", ":model_piper"])
+
 oci_image(
     name = "image",
     base = "@distroless_cc",
     entrypoint = ["/usr/local/bin/sloperator"],
+    env = {"LD_LIBRARY_PATH": "/usr/local/lib"},
     exposed_ports = ["5060/udp"],
-    tars = [":sloperator_layer"],
+    tars = [":models_layer", ":libs_layer", ":sloperator_layer"],
+)
+
+# bazel run //:image_load  (docker), or podman load -i $(bazel cquery --output=files //:image_load)
+oci_load(
+    name = "image_load",
+    image = ":image",
+    repo_tags = ["sloperator:dev"],
 )
 
 # Use --@//:repository=ghcr.io/owner/repo to override at push time.

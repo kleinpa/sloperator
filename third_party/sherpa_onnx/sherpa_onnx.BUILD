@@ -8,6 +8,12 @@ load("@rules_cc//cc:defs.bzl", "cc_import", "cc_library")
     shared_library = "lib/lib%s.so" % n,
 ) for n in ["onnxruntime", "sherpa-onnx-c-api"]]
 
+filegroup(
+    name = "libs",  # for the container image
+    srcs = ["lib/libonnxruntime.so", "lib/libsherpa-onnx-c-api.so"],
+    visibility = ["//visibility:public"],
+)
+
 cc_library(
     name = "sherpa_onnx",
     hdrs = ["include/sherpa-onnx/c-api/c-api.h"],

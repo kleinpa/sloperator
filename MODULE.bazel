@@ -76,7 +76,7 @@ http_file(
 # Moonshine v2 base, English, quantized: ~110 MB, fast on CPU.
 http_archive(
     name = "moonshine_base_en",
-    build_file_content = 'filegroup(name = "model", srcs = glob(["*"]), visibility = ["//visibility:public"])\nexports_files(["tokens.txt", "test_wavs/0.wav"])',
+    build_file_content = 'filegroup(name = "model", srcs = glob(["*"], exclude = ["*.bazel"]), visibility = ["//visibility:public"])\nexports_files(["tokens.txt", "test_wavs/0.wav"])',
     sha256 = "43232c1d13013d37317163baec3135bd771a186a4356f28c889bab453bb0e891",
     strip_prefix = "sherpa-onnx-moonshine-base-en-quantized-2026-02-27",
     urls = ["https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-moonshine-base-en-quantized-2026-02-27.tar.bz2"],
@@ -85,7 +85,7 @@ http_archive(
 # Parakeet TDT 0.6B v2 int8: ~650 MB, more accurate, slower. Optional.
 http_archive(
     name = "parakeet_tdt_v2",
-    build_file_content = 'filegroup(name = "model", srcs = glob(["*"]), visibility = ["//visibility:public"])\nexports_files(["tokens.txt"])',
+    build_file_content = 'filegroup(name = "model", srcs = glob(["*"], exclude = ["*.bazel"]), visibility = ["//visibility:public"])\nexports_files(["tokens.txt"])',
     sha256 = "157c157bc51155e03e37d2466522a3a737dd9c72bb25f36eb18912964161e1ad",
     strip_prefix = "sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8",
     urls = ["https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-nemo-parakeet-tdt-0.6b-v2-int8.tar.bz2"],
@@ -94,7 +94,7 @@ http_archive(
 # Piper lessac (medium), 22 kHz: ~65 MB, fast on CPU.
 http_archive(
     name = "piper_lessac",
-    build_file_content = 'filegroup(name = "model", srcs = glob(["**"]), visibility = ["//visibility:public"])\nexports_files(["tokens.txt"])',
+    build_file_content = 'filegroup(name = "model", srcs = glob(["**"], exclude = ["*.bazel"]), visibility = ["//visibility:public"])\nexports_files(["tokens.txt"])',
     sha256 = "9e3febfacf0abf4270172d2958bcec246032b7e88efc2720840cc80c93de334e",
     strip_prefix = "vits-piper-en_US-lessac-medium",
     urls = ["https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-en_US-lessac-medium.tar.bz2"],
@@ -103,7 +103,7 @@ http_archive(
 # Kokoro v0.19 int8, 11 voices: ~130 MB, more natural, ~5x slower than Piper. Optional.
 http_archive(
     name = "kokoro_en",
-    build_file_content = 'filegroup(name = "model", srcs = glob(["**"]), visibility = ["//visibility:public"])\nexports_files(["tokens.txt"])',
+    build_file_content = 'filegroup(name = "model", srcs = glob(["**"], exclude = ["*.bazel"]), visibility = ["//visibility:public"])\nexports_files(["tokens.txt"])',
     sha256 = "c9f0dd393615805b0bab050c340834d5e684e732aec91c0e860cd30e982c08bd",
     strip_prefix = "kokoro-int8-en-v0_19",
     urls = ["https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/kokoro-int8-en-v0_19.tar.bz2"],
