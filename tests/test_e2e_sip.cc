@@ -155,12 +155,15 @@ TEST_F(PipelineTest, UnknownDepartmentKeepsListening) {
   EXPECT_TRUE(transfers.empty());
 }
 
-TEST_F(PipelineTest, LlmFailureDoesNotLeaveBeepsQueued) {
-  // Regression: 30 s of thinking beeps stayed queued, deafening the bot.
+TEST_F(PipelineTest, LlmFailureApologizesAndKeepsListening) {
+  // Regressions: 30 s of thinking beeps stayed queued (deafening the bot), and
+  // the caller got silence.
   llm->reply = {"", ""};
   Start();
   Speak();
   ASSERT_TRUE(WaitFor([&] { return llm->calls == 1; }));
+  ASSERT_TRUE(WaitFor([&] { std::lock_guard l(tts->mu); return !tts->said.empty(); }));
+  EXPECT_EQ(tts->said, std::vector<std::string>{g_cfg.fallback});
   ASSERT_TRUE(WaitFor([&] { return s->audio_out.Size() < size_t(kAudioRate); }));
   Speak();
   EXPECT_TRUE(WaitFor([&] { return llm->calls == 2; }));

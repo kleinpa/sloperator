@@ -20,6 +20,7 @@ model: qwen3:4b-instruct
 # tts_rms: 4000                    # speech loudness (~-18 dBFS)
 
 greeting: Hello, Example Co, how can I help you?
+# fallback: Sorry, I'm having trouble right now. Please try again in a moment.  # LLM down
 
 system_prompt: |
   You are the phone receptionist for Example Co.

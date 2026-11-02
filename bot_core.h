@@ -26,6 +26,7 @@ struct Config {
               piper = "piper:10200", pbx;
   std::string model = "qwen3:4b-instruct", language = "en",
               greeting = "Hello, how can I help you?",
+              fallback = "Sorry, I'm having trouble right now. Please try again in a moment.",
               prompt = "You are a helpful voice assistant answering a phone call. "
                        "Reply in one to three short, plain spoken sentences: no "
                        "lists, markdown or emoji. If you don't know, say so.",

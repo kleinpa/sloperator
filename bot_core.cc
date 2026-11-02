@@ -36,7 +36,7 @@ void LoadConfig(const std::string& text) {
   auto& c = g_cfg;
   for (auto [k, v] : std::initializer_list<std::pair<const char*, std::string*>>{{"whisper", &c.whisper}, {"ollama", &c.ollama}, {"piper", &c.piper},
                       {"pbx", &c.pbx}, {"model", &c.model}, {"stt_model", &c.stt_model}, {"tts_model", &c.tts_model}, {"language", &c.language},
-                      {"greeting", &c.greeting}, {"system_prompt", &c.prompt}, {"knowledge", &c.knowledge}})
+                      {"greeting", &c.greeting}, {"fallback", &c.fallback}, {"system_prompt", &c.prompt}, {"knowledge", &c.knowledge}})
     get(y, k, *v);
   get(y, "max_calls", c.max_calls), get(y, "history_turns", c.history_turns), get(y, "threads", c.threads);
   get(y, "tts_rms", c.tts_rms), get(y, "directory", c.directory);
@@ -356,8 +356,9 @@ void Session::Run() {
       return active.load();
     });
     if (!spoke) audio_out.Clear();  // LLM failed or only called a tool
-    history_.push_back({{"role", "assistant"}, {"content", r.text}});
     if (!active) return;
+    if (!spoke && r.transfer.empty()) Say(r.text = g_cfg.fallback);  // never leave the caller in silence
+    history_.push_back({{"role", "assistant"}, {"content", r.text}});
 
     auto it = g_cfg.directory.find(r.transfer);
     if (it != g_cfg.directory.end() && transfer_) {
