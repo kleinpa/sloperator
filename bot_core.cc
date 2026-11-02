@@ -24,7 +24,7 @@ std::vector<int16_t> g_greeting_pcm;
 
 // Every config key ↔ Config field; dotted keys nest. LoadConfig, DumpConfig and
 // ConfigKeys all come from this one table, so nothing is settable in code only.
-using Field = std::variant<std::string*, int*, double*, std::map<std::string, std::string>*, json*>;
+using Field = std::variant<std::string*, int*, double*, bool*, std::map<std::string, std::string>*, json*>;
 static std::vector<std::pair<std::string, Field>> Fields(Config& c) {
   return {{"whisper", &c.whisper}, {"ollama", &c.ollama}, {"piper", &c.piper}, {"pbx", &c.pbx},
           {"model", &c.model}, {"think", &c.think}, {"options", &c.options},
@@ -34,7 +34,11 @@ static std::vector<std::pair<std::string, Field>> Fields(Config& c) {
           {"tts_varispeed", &c.tts_varispeed}, {"tts_speaker", &c.tts_speaker}, {"tts_rms", &c.tts_rms},
           {"threads", &c.threads}, {"max_calls", &c.max_calls}, {"history_turns", &c.history_turns},
           {"vad.model", &c.vad.model}, {"vad.prob", &c.vad.prob}, {"vad.threshold", &c.vad.threshold},
-          {"vad.silence_ms", &c.vad.silence_ms}, {"vad.min_speech_ms", &c.vad.min_speech_ms}};
+          {"vad.silence_ms", &c.vad.silence_ms}, {"vad.min_speech_ms", &c.vad.min_speech_ms},
+          {"vad.max_speech_s", &c.vad.max_speech_s}, {"knowledge_intro", &c.knowledge_intro},
+          {"transfer_intro", &c.transfer_intro}, {"transfer_say", &c.transfer_say}, {"cues", &c.cues},
+          {"keep_alive", &c.keep_alive}, {"llm_timeout_s", &c.llm_timeout_s},
+          {"service_timeout_s", &c.service_timeout_s}};
 }
 static json::json_pointer Ptr(std::string k) { return json::json_pointer("/" + (std::replace(k.begin(), k.end(), '.', '/'), k)); }
 
@@ -97,9 +101,9 @@ std::vector<std::string> ConfigKeys() {
 std::string SystemPrompt() {
   std::string p = g_cfg.prompt;
   if (!g_cfg.knowledge.empty())
-    p += "\n\nFacts (use only these; never invent details):\n" + g_cfg.knowledge;
+    p += "\n\n" + g_cfg.knowledge_intro + "\n" + g_cfg.knowledge;
   if (!g_cfg.directory.empty()) {
-    p += "\n\nTo connect the caller to a department, call transfer_call. Departments:";
+    p += "\n\n" + g_cfg.transfer_intro;
     for (auto& [d, _] : g_cfg.directory) p += " " + d + ",";
     p.back() = '.';
   }
@@ -118,7 +122,7 @@ static int Connect(const std::string& addr) {
     if ((fd = socket(p->ai_family, p->ai_socktype, 0)) >= 0 && connect(fd, p->ai_addr, p->ai_addrlen))
       close(fd), fd = -1;
   freeaddrinfo(res);
-  timeval tv{30, 0};  // a hung service must not hang the call
+  timeval tv{g_cfg.service_timeout_s, 0};  // a hung service must not hang the call
   if (fd >= 0) setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof tv),
                setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof tv);
   if (fd < 0) LOG(ERROR) << "[wyoming] connect failed: " << addr;
@@ -205,7 +209,7 @@ struct Ollama : LlmClient {
   }
   LlmReply Chat(const json& messages, std::function<bool(const std::string&)> say) override {
     json req = {{"model", g_cfg.model}, {"messages", messages}, {"options", g_cfg.options},
-                {"stream", true}, {"keep_alive", -1}};
+                {"stream", true}, {"keep_alive", g_cfg.keep_alive}};
     if (!g_cfg.think.is_null()) req["think"] = g_cfg.think;
     if (!g_cfg.directory.empty()) {
       json depts = json::array();
@@ -222,7 +226,7 @@ struct Ollama : LlmClient {
     bool go = true, first = true;
     auto emit = [&](const std::string& s) { if (go) go = say(s), first = false; };
     httplib::Client cli(g_cfg.ollama);
-    cli.set_connection_timeout(5), cli.set_read_timeout(120);
+    cli.set_connection_timeout(5), cli.set_read_timeout(g_cfg.llm_timeout_s);
     {
       std::lock_guard l(mu);
       if (stopped) return r;
@@ -363,12 +367,12 @@ Session::~Session() {
 }
 
 void Session::Start() {
-  audio_out.Push(AnswerChime());
+  Cue(AnswerChime());
   if (!g_greeting_pcm.empty()) {
     audio_out.Push(g_greeting_pcm);
     history_.push_back({{"role", "assistant"}, {"content", g_cfg.greeting}});
   }
-  audio_out.Push(ListeningChime());
+  Cue(ListeningChime());
   thread_ = std::thread([this] { Run(); });
 }
 
@@ -378,6 +382,10 @@ void Session::ProcessRxFrame(const int16_t* s, int n) {
   if (!vad_->Push(s, n, utt)) return;
   { std::lock_guard l(mu_); pending_.push(std::move(utt)); }
   cv_.notify_one();
+}
+
+void Session::Cue(const std::vector<int16_t>& v) {
+  if (g_cfg.cues) audio_out.Push(v);
 }
 
 void Session::Say(const std::string& text) {
@@ -404,15 +412,15 @@ void Session::Run() {
       pcm = std::move(pending_.front());
       pending_.pop();
     }
-    audio_out.Push(SegmentChime());
-    audio_out.Push(ThinkingBeeps(int(pcm.size() * 1000 / kAudioRate) + 2000));
+    Cue(SegmentChime());
+    Cue(ThinkingBeeps(int(pcm.size() * 1000 / kAudioRate) + 2000));
     std::string text = asr_->Transcribe(pcm);
     audio_out.Clear();
     LOG(INFO) << caller_ << " [stt] " << pcm.size() * 1000 / kAudioRate << " ms → \"" << text << '"';
     if (text.empty()) continue;
     history_.push_back({{"role", "user"}, {"content", text}});
 
-    audio_out.Push(ThinkingBeeps(30000));
+    Cue(ThinkingBeeps(30000));
     bool spoke = false;
     auto r = llm_->Chat(Messages(), [&](const std::string& s) {
       if (!active) return false;
@@ -427,7 +435,10 @@ void Session::Run() {
 
     auto it = g_cfg.directory.find(r.transfer);
     if (it != g_cfg.directory.end() && transfer_) {
-      if (!spoke) Say("Connecting you to " + it->first + " now.");
+      if (auto t = g_cfg.transfer_say; !spoke && !t.empty()) {
+        if (auto at = t.find("{}"); at != std::string::npos) t.replace(at, 2, it->first);
+        Say(t);
+      }
       while (active && audio_out.Size()) std::this_thread::sleep_for(std::chrono::milliseconds(20));
       LOG(INFO) << caller_ << " [call] transfer " << it->first << " → " << it->second;
       transfer_(it->second);
@@ -435,7 +446,7 @@ void Session::Run() {
       return;
     }
     if (!r.transfer.empty()) LOG(WARNING) << caller_ << " [call] unknown department: " << r.transfer;
-    audio_out.Push(ListeningChime());
+    Cue(ListeningChime());
   }
 }
 

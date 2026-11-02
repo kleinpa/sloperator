@@ -30,11 +30,17 @@ struct Config {
               prompt = "You are a helpful voice assistant answering a phone call. "
                        "Reply in one to three short, plain spoken sentences: no "
                        "lists, markdown or emoji. If you don't know, say so.",
-              knowledge;                          // facts appended to prompt
+              knowledge,                          // facts appended to prompt
+              knowledge_intro = "Facts (use only these; never invent details):",
+              transfer_intro = "To connect the caller to a department, call transfer_call. Departments:",
+              transfer_say = "Connecting you to {} now.";  // {} = department
   std::map<std::string, std::string> directory;  // department → extension
   nlohmann::json options = {{"temperature", 0.3}, {"top_p", 0.8},
                             {"top_k", 20}, {"num_ctx", 4096}};
-  nlohmann::json think;  // null = don't send
+  nlohmann::json think;            // null = don't send
+  nlohmann::json keep_alive = -1;  // Ollama: -1 = never unload
+  int llm_timeout_s = 120, service_timeout_s = 30;
+  bool cues = true;                // chimes and thinking beeps
   std::string stt_model, tts_model;  // sherpa model dirs; empty = Wyoming
   double tts_speed = 1;               // tempo only (pitch kept)
   double tts_varispeed = 1;          // tempo + pitch; 0.726 = old derpy voice
@@ -108,6 +114,7 @@ class Session {
  private:
   void Run();
   void Say(const std::string& text);
+  void Cue(const std::vector<int16_t>& tone);  // unless cues: false
   nlohmann::json Messages() const;
 
   std::string caller_;

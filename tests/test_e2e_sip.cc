@@ -147,6 +147,17 @@ TEST_F(PipelineTest, TransferToolRoutesViaDirectory) {
   EXPECT_TRUE(WaitFor([&] { return !s->active; }));
 }
 
+TEST_F(PipelineTest, CuesAndTransferPhraseAreConfigurable) {
+  g_cfg.cues = false, g_cfg.transfer_say = "Putting you through to {}.";
+  g_greeting_pcm.clear();
+  llm->reply = {"", "sales"};
+  Start();
+  EXPECT_EQ(s->audio_out.Size(), 0u);  // no answer/listening chimes
+  Speak();
+  ASSERT_TRUE(Drain([&] { return !transfers.empty(); }));
+  EXPECT_EQ(tts->said, std::vector<std::string>{"Putting you through to sales."});
+}
+
 TEST_F(PipelineTest, UnknownDepartmentKeepsListening) {
   llm->reply = {"Let me see.", "accounting"};
   Start();

@@ -98,6 +98,7 @@ struct VadParams {
   int min_speech_ms = 200; // shorter bursts are dropped
   std::string model;       // Silero .onnx; empty = energy VAD
   double prob = 0.5;       // Silero speech probability threshold
+  double max_speech_s = 20; // Silero: force-split longer turns
 };
 
 // Energy VAD. Feed 20 ms frames; returns true when `ready` holds an utterance.

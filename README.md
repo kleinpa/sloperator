@@ -35,7 +35,8 @@ sales" (Piper), and the bot must hear it through Silero and Moonshine and turn
 the LLM's tool call into a SIP REFER.
 
 Flags: `--config_file`, `--port` (5060), `--public_addr`, and `--whisper`,
-`--ollama`, `--piper`, `--pbx` to override the config. Put machine-specific Bazel
+`--ollama`, `--piper`, `--pbx` to override the config. `--print_config` prints
+the effective config (defaults + file + flags) and exits. Put machine-specific Bazel
 settings (proxy, registry mirror) in `user.bazelrc`.
 
 The image's glibc comes from Debian 12, so build it on a host with glibc ≤ 2.36
@@ -74,7 +75,10 @@ speaking at once each wait longer.
 Run with `--public_addr <ip>` if the bot is behind NAT. Without `stt_model` or
 `tts_model`, it uses the Wyoming services at `whisper:` / `piper:` instead.
 
-See [bot_config.yaml](bot_config.yaml) for every key. Key points:
+Everything is set from the config file, and nothing needs a rebuild: spoken
+phrases, prompt wording, voice (`tts_speed`, `tts_varispeed`), cues, VAD,
+timeouts and Ollama options. Unknown keys are logged at startup.
+See [bot_config.yaml](bot_config.yaml) for every key (a test keeps it complete). Key points:
 
 - `system_prompt` + `knowledge` + the `directory` names make up the system prompt.
 - Transfers use Ollama tool calling, so the model needs tool support (Qwen3 has it; Gemma 3 doesn't).

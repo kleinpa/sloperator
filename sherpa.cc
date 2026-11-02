@@ -26,7 +26,7 @@ struct SileroVad : VadEngine {
   Ptr<SherpaOnnxVoiceActivityDetector, SherpaOnnxDestroyVoiceActivityDetector> d;
   explicit SileroVad(const VadParams& p) {
     SherpaOnnxVadModelConfig c{};
-    c.silero_vad = {p.model.c_str(), float(p.prob), p.silence_ms / 1000.f, p.min_speech_ms / 1000.f, 512, 20};
+    c.silero_vad = {p.model.c_str(), float(p.prob), p.silence_ms / 1000.f, p.min_speech_ms / 1000.f, 512, float(p.max_speech_s)};
     c.sample_rate = kAudioRate, c.num_threads = 1;
     d.reset(SherpaOnnxCreateVoiceActivityDetector(&c, 30));
     if (!d) LOG(FATAL) << "[vad] can't load " << p.model;
