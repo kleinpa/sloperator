@@ -43,7 +43,32 @@ The image's glibc comes from Debian 12, so build it on a host with glibc ≤ 2.3
 
 ## Config
 
-See [bot_config.yaml](bot_config.yaml). Key points:
+Every key has a default, but a real deployment needs at least this
+(`--config_file`):
+
+```yaml
+ollama: http://ollama:11434          # Ollama endpoint
+model: qwen3:4b-instruct             # must support tool calling
+stt_model: /models/moonshine         # in-process models (paths in the image)
+tts_model: /models/piper
+vad: {model: /models/silero_vad.onnx}
+
+greeting: Hello, Example Co, how can I help you?
+system_prompt: |
+  You are the phone receptionist for Example Co. Reply in one to three short,
+  plain spoken sentences.
+knowledge: |                         # facts the bot may state; nothing else
+  Open 9 to 5, Monday to Friday.
+directory:                           # department → extension (transfer_call tool)
+  sales: 1042
+  support: 1050
+pbx: pbx.local                       # SIP host transfers are sent to
+```
+
+Run with `--public_addr <ip>` if the bot is behind NAT. Without `stt_model` or
+`tts_model`, it uses the Wyoming services at `whisper:` / `piper:` instead.
+
+See [bot_config.yaml](bot_config.yaml) for every key. Key points:
 
 - `system_prompt` + `knowledge` + the `directory` names make up the system prompt.
 - Transfers use Ollama tool calling, so the model needs tool support (Qwen3 has it; Gemma 3 doesn't).
