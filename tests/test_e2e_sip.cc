@@ -286,12 +286,23 @@ static bool ServePiper(int c) {
 // sales. Records what the caller said.
 static std::mutex g_heard_mu;
 static std::vector<std::string> g_user_said;
+static std::atomic_bool g_model_missing{false};  // 404 on chat until pulled
+static std::atomic_int g_pulls{0};
 static bool ServeOllama(int c) {
   size_t len = 0;
+  std::string first = Line(c);
   for (std::string l; !(l = Line(c)).empty() && l != "\r";)
     if (strncasecmp(l.c_str(), "content-length:", 15) == 0) len = std::stoul(l.substr(15));
   std::string body(len, 0);
   Rx(c, body.data(), len);
+  auto reply = [&](const char* status, const std::string& b) {
+    Tx(c, std::string("HTTP/1.1 ") + status + "\r\nContent-Type: application/json\r\nContent-Length: " +
+              std::to_string(b.size()) + "\r\n\r\n" + b);
+    return false;
+  };
+  if (first.find("/api/pull") != std::string::npos)
+    return g_pulls++, g_model_missing = false, reply("200 OK", R"({"status":"success"})");
+  if (g_model_missing) return reply("404 Not Found", R"({"error":"model 'x' not found"})");
   json req = json::parse(body, nullptr, false), msg = {{"role", "assistant"}, {"content", "Hi."}};
   std::string said = req["messages"].back().value("content", "");
   { std::lock_guard l(g_heard_mu); g_user_said.push_back(said); }
@@ -367,7 +378,7 @@ class SipTest : public ::testing::Test {
     if (access(bin.c_str(), X_OK)) GTEST_SKIP() << "no sloperator binary (set SLOPERATOR_BIN)";
     ASSERT_TRUE(ollama.Start(kOllama, ServeOllama) && piper.Start(kPiper, ServePiper) &&
                 whisper.Start(kWhisper, ServeWhisper));
-    g_user_said.clear();
+    g_user_said.clear(), g_model_missing = false, g_pulls = 0;
 
     ep.libCreate();
     pj::EpConfig ec;
@@ -454,4 +465,15 @@ TEST_F(SipTest, InProcessModelsHearCallerAndTransfer) {
   EXPECT_NE(call->refer_to.find("1042"), std::string::npos) << call->refer_to;
   // Regression: the bot's leg stayed up after transfer, holding its only call slot.
   EXPECT_TRUE(Pump(5s, [&] { return !call->up; })) << "bot kept the call after transferring";
+}
+
+// Regression: warmup ran once, before Ollama had the model, so the prompt cache
+// was never primed and the first caller paid a 50 s prompt eval.
+TEST_F(SipTest, MissingModelIsPulledInBackground) {
+  g_model_missing = true;
+  Launch("vad: {threshold: 300}\n");
+  CallerPort port;
+  ASSERT_TRUE(Dial(port)) << "SIP must open while the LLM is still unavailable";
+  EXPECT_TRUE(Pump(15s, [&] { return g_pulls && ollama.hits; }))
+      << "pulls=" << g_pulls << " warm chats=" << ollama.hits;
 }

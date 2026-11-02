@@ -61,7 +61,7 @@ struct TtsClient {
   virtual ~TtsClient() = default;
   virtual std::vector<int16_t> Synthesize(const std::string& text) = 0;  // kAudioRate PCM
 };
-struct LlmReply { std::string text, transfer; };  // transfer = department, if called
+struct LlmReply { std::string text, transfer; int status = 200; };  // transfer = department; status = HTTP (0: unreachable)
 struct LlmClient {
   virtual ~LlmClient() = default;
   // Streams sentences to `say`; it returns false to abort.

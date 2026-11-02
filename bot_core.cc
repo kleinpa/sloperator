@@ -211,8 +211,12 @@ struct Ollama : LlmClient {
       live = nullptr;
       if (stopped) return r;
     }
+    r.status = res.status;
     if (!sent && go) LOG(ERROR) << "[llm] " << httplib::to_string(err);
-    else if (res.status && res.status != 200) LOG(ERROR) << "[llm] HTTP " << res.status;
+    else if (res.status && res.status != 200) {
+      auto e = json::parse(line.empty() ? res.body : line, nullptr, false);
+      LOG(ERROR) << "[llm] HTTP " << res.status << ": " << (e.is_object() ? e.value("error", "") : line);
+    }
     if (auto s = CleanSentence(buf); !s.empty()) emit(s);
     return r;
   }
@@ -251,11 +255,26 @@ void Warmup() {
   LOG(INFO) << "[warmup] tts " << ms() << " ms";
   MakeAsr()->Transcribe(std::vector<int16_t>(kAudioRate / 2));
   LOG(INFO) << "[warmup] stt " << ms() << " ms";
-  // Loads the model and caches the system-prompt prefix; aborts at first sentence.
-  MakeOllamaClient()->Chat({{{"role", "system"}, {"content", SystemPrompt()}},
-                            {{"role", "user"}, {"content", "Hi."}}},
-                           [](auto&) { return false; });
-  LOG(INFO) << "[warmup] llm " << ms() << " ms";
+  // Loads the model and caches the system-prompt prefix (aborts at the first
+  // sentence). If Ollama is down or lacks the model, keep at it in the
+  // background, pulling on 404, so SIP still opens and calls get the fallback.
+  auto warm = [] {
+    return MakeOllamaClient()->Chat({{{"role", "system"}, {"content", SystemPrompt()}},
+                                     {{"role", "user"}, {"content", "Hi."}}},
+                                    [](auto&) { return false; }).status;
+  };
+  if (int st = warm(); st == 200) LOG(INFO) << "[warmup] llm " << ms() << " ms";
+  else std::thread([st, warm]() mutable {
+    for (int wait = 2; st != 200; st = warm(), wait = std::min(wait * 2, 60)) {
+      std::this_thread::sleep_for(std::chrono::seconds(wait));
+      if (st != 404) continue;
+      LOG(WARNING) << "[warmup] pulling " << g_cfg.model << " (may take minutes)";
+      httplib::Client cli(g_cfg.ollama);
+      cli.set_read_timeout(3600);
+      cli.Post("/api/pull", json{{"model", g_cfg.model}, {"stream", false}}.dump(), "application/json");
+    }
+    LOG(INFO) << "[warmup] llm ready";
+  }).detach();
 }
 
 // ── Audio cues ────────────────────────────────────────────────────────────────
