@@ -133,6 +133,7 @@ class BotCall : public pj::Call {
   using pj::Call::Call;
   void onCallState(pj::OnCallStateParam&) override;
   void onCallMediaState(pj::OnCallMediaStateParam&) override;
+  void onCallTransferStatus(pj::OnCallTransferStatusParam&) override;
 
  private:
   std::unique_ptr<Session> session_;

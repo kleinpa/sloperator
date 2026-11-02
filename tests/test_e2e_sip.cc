@@ -421,4 +421,6 @@ TEST_F(SipTest, InProcessModelsHearCallerAndTransfer) {
   ASSERT_TRUE(Pump(20s, [&] { return !call->refer_to.empty(); }))
       << "no transfer; LLM heard: " << (g_user_said.empty() ? "" : g_user_said.back());
   EXPECT_NE(call->refer_to.find("1042"), std::string::npos) << call->refer_to;
+  // Regression: the bot's leg stayed up after transfer, holding its only call slot.
+  EXPECT_TRUE(Pump(5s, [&] { return !call->up; })) << "bot kept the call after transferring";
 }

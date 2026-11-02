@@ -378,6 +378,16 @@ void BotCall::onCallState(pj::OnCallStateParam&) {
   delete this;
 }
 
+// Our leg is done once the REFER resolves either way; otherwise it holds a
+// call slot (max_calls) until the caller hangs up.
+void BotCall::onCallTransferStatus(pj::OnCallTransferStatusParam& p) {
+  LOG(INFO) << getInfo().remoteUri << " [call] transfer " << p.statusCode << " " << p.reason;
+  if (!p.finalNotify) return;
+  p.cont = false;
+  pj::CallOpParam op;
+  try { hangup(op); } catch (pj::Error& e) { LOG(ERROR) << "[call] hangup: " << e.info(); }
+}
+
 void BotCall::onCallMediaState(pj::OnCallMediaStateParam&) {
   auto ci = getInfo();
   for (unsigned i = 0; i < ci.media.size(); i++) {
