@@ -51,6 +51,8 @@ struct FakeTts : TtsClient {
 };
 struct FakeLlm : LlmClient {
   LlmReply reply{"Hello there.", ""};
+  std::vector<std::string> then;  // more sentences, each after `gap`
+  std::chrono::milliseconds gap{0};
   std::vector<json> seen;  // messages per call
   std::atomic_int calls{0};
   bool hang = false;  // block like a slow prompt eval until Cancel()
@@ -70,6 +72,7 @@ struct FakeLlm : LlmClient {
     }
     seen.push_back(m);
     if (!reply.text.empty()) say(reply.text);
+    for (auto& t : then) std::this_thread::sleep_for(gap), say(t);
     return calls++, reply;
   }
 };
@@ -156,6 +159,25 @@ TEST_F(PipelineTest, CuesAndTransferPhraseAreConfigurable) {
   Speak();
   ASSERT_TRUE(Drain([&] { return !transfers.empty(); }));
   EXPECT_EQ(tts->said, std::vector<std::string>{"Putting you through to sales."});
+}
+
+// Pops `ms` of audio like the RTP port; true if any of it is non-silent.
+static bool Hears(AudioQueue& q, int ms) {
+  std::vector<int16_t> v(ms * kAudioRate / 1000);
+  q.Pop(v.data(), v.size());
+  return std::any_of(v.begin(), v.end(), [](int16_t x) { return x != 0; });
+}
+
+TEST_F(PipelineTest, BeepsFillGapsBetweenSentencesOnly) {
+  llm->then = {"Second sentence."}, llm->gap = 1500ms;  // slow generation
+  Start();
+  Speak();
+  ASSERT_TRUE(WaitFor([&] { std::lock_guard l(tts->mu); return tts->said.size() == 1; }));
+  Hears(s->audio_out, int(s->audio_out.Size() * 1000 / kAudioRate));  // play the first sentence out
+  EXPECT_TRUE(Hears(s->audio_out, 700)) << "silence in the mid-reply gap";
+  ASSERT_TRUE(WaitFor([&] { return llm->calls == 1; }));
+  Hears(s->audio_out, int(s->audio_out.Size() * 1000 / kAudioRate));  // rest of reply + listening chime
+  EXPECT_FALSE(Hears(s->audio_out, 1000)) << "beeping after the reply finished";
 }
 
 TEST_F(PipelineTest, UnknownDepartmentKeepsListening) {

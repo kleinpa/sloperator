@@ -41,6 +41,7 @@ struct Config {
   nlohmann::json keep_alive = -1;  // Ollama: -1 = never unload
   int llm_timeout_s = 120, service_timeout_s = 30;
   bool cues = true;                // chimes and thinking beeps
+  int chunk_first_words = 0, chunk_words = 0;  // >0: TTS may break at , ; : (sooner, choppier)
   std::string stt_model, tts_model;  // sherpa model dirs; empty = Wyoming
   double tts_speed = 1;               // tempo only (pitch kept)
   double tts_varispeed = 1;          // tempo + pitch; 0.726 = old derpy voice
@@ -115,6 +116,7 @@ class Session {
   void Run();
   void Say(const std::string& text);
   void Cue(const std::vector<int16_t>& tone);  // unless cues: false
+  void Thinking(bool on);                      // beeps whenever playback runs dry
   nlohmann::json Messages() const;
 
   std::string caller_;

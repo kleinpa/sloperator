@@ -69,21 +69,24 @@ inline std::string CleanSentence(const std::string& s) {
 }
 
 // Pops complete sentences off the front of `buf`. '.' needs a lookahead char
-// (so "3.5" stays whole). With `soft`, also breaks at , ; : once the clause has
-// >= 4 words — gets the first audio out sooner.
-inline std::vector<std::string> SplitSentences(std::string& buf, bool soft = false) {
+// (so "3.5" stays whole). Also breaks at , ; : once a chunk has `first` words
+// (the first chunk) or `rest` words (later ones), so TTS can start before a long
+// sentence — e.g. a list — is fully generated. 0 = no soft breaks.
+inline std::vector<std::string> SplitSentences(std::string& buf, int first = 0, int rest = 0) {
+  int soft = first;
   std::vector<std::string> out;
   size_t st = 0, words = 0;
   for (size_t i = 0; i < buf.size(); i++) {
     char c = buf[i];
     words += c == ' ' && i > st && buf[i - 1] != ' ';
-    bool cut = c == '!' || c == '?' || c == '\n' || (soft && words >= 3 && (c == ',' || c == ';' || c == ':'));
+    bool cut = c == '!' || c == '?' || c == '\n' ||
+               (soft && int(words) + 1 >= soft && (c == ',' || c == ';' || c == ':'));
     if (c == '.') {
       if (i + 1 == buf.size()) break;
       cut = !std::isdigit((unsigned char)buf[i + 1]);
     }
     if (!cut) continue;
-    if (auto s = CleanSentence(buf.substr(st, i + 1 - st)); !s.empty()) out.push_back(s), soft = false;
+    if (auto s = CleanSentence(buf.substr(st, i + 1 - st)); !s.empty()) out.push_back(s), soft = rest;
     st = i + 1, words = 0;
   }
   buf.erase(0, st);
@@ -133,17 +136,24 @@ class AudioQueue {
     std::lock_guard l(mu_);
     q_.insert(q_.end(), v.begin(), v.end());
   }
-  // Fills exactly n samples, zero-padding on underflow.
+  // Fills exactly n samples; on underflow plays the filler loop (restarting
+  // it each gap), else silence.
   void Pop(int16_t* out, size_t n) {
     std::lock_guard l(mu_);
     size_t k = std::min(n, q_.size());
     std::copy_n(q_.begin(), k, out), q_.erase(q_.begin(), q_.begin() + k);
-    std::fill(out + k, out + n, 0);
+    if (k) fpos_ = 0;
+    for (size_t i = k; i < n; i++) out[i] = filler_.empty() ? 0 : filler_[fpos_++ % filler_.size()];
   }
+  // Loop played only while the queue is empty ({} = off), e.g. thinking beeps.
+  void SetFiller(std::vector<int16_t> f) { std::lock_guard l(mu_); filler_ = std::move(f), fpos_ = 0; }
+  bool Busy() const { std::lock_guard l(mu_); return !q_.empty() || !filler_.empty(); }
   size_t Size() const { std::lock_guard l(mu_); return q_.size(); }
   void Clear() { std::lock_guard l(mu_); q_.clear(); }
 
  private:
   mutable std::mutex mu_;
   std::deque<int16_t> q_;
+  std::vector<int16_t> filler_;
+  size_t fpos_ = 0;
 };

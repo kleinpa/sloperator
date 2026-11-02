@@ -13,7 +13,9 @@ caller ⇄ PJSIP (G.722, 16 kHz) ⇄ VAD → STT ─text→ Ollama ─sentences�
 - **Two processes:** the bot and Ollama. VAD, STT and TTS run in-process through
   sherpa-onnx (about 350 MB RSS for all three). Wyoming Whisper/Piper services
   still work if you leave out `stt_model`/`tts_model`.
-- **Streaming:** TTS starts on the first sentence (or first long clause).
+- **Streaming:** TTS speaks each sentence as soon as it's complete. Any gap while
+  the LLM writes the next one is filled with thinking beeps (after ~0.5 s).
+  `chunk_first_words`/`chunk_words` can break at commas instead (sooner, choppier).
 - **Warmup:** every model is loaded before SIP opens, so the first call isn't
   cold and the greeting is ready.
 - **Half-duplex:** caller audio is ignored while the bot is talking.

@@ -22,6 +22,9 @@ model: qwen3:4b-instruct
 # max_calls: 1                     # one CPU can't serve parallel calls well
 # history_turns: 8                 # turns of history sent to the LLM
 # tts_rms: 4000                    # speech loudness (~-18 dBFS)
+# chunk_first_words: 0             # >0: first TTS chunk may break at , ; : after N words
+# chunk_words: 0                   # >0: same for later chunks. Off = whole sentences (natural);
+#                                  #     gaps between them get thinking beeps instead
 
 greeting: Hello, Example Co, how can I help you?
 # fallback: Sorry, I'm having trouble right now. Please try again in a moment.  # LLM down

@@ -71,11 +71,23 @@ TEST(SplitSentences, StreamsCompleteSentencesOnly) {
 
 TEST(SplitSentences, SoftBreakOnlyForLongClauses) {
   std::string a = "Sure, one moment";
-  EXPECT_TRUE(SplitSentences(a, true).empty());  // "Sure," is too short to send alone
+  EXPECT_TRUE(SplitSentences(a, 4).empty());  // "Sure," is too short to send alone
   std::string b = "Sure thing, let me check that, okay";
-  EXPECT_EQ(SplitSentences(b, true), std::vector<std::string>{"Sure thing, let me check that,"});
-  std::string c = "Sure thing, let me check that, okay";
+  EXPECT_EQ(SplitSentences(b, 4), std::vector<std::string>{"Sure thing, let me check that,"});
+  // Default: whole sentences only (natural prosody), even for long lists.
+  std::string c = "The departments are: Clock, GE Rotary Phone, Oxygen, and Polycom";
   EXPECT_TRUE(SplitSentences(c).empty());
+}
+
+// Regression: only the first clause could break early, so a long list after it
+// waited for the whole sentence to be generated — seconds of silence on CPU.
+TEST(SplitSentences, LongListsKeepStreaming) {
+  std::string buf = "The departments are: Clock, GE Rotary Phone, Oxygen, PHONE-MATE, Peter, Pixel 7, "
+                    "Pixel 9, Polycom, USRobotics, and Western Electric 500. Anything";
+  EXPECT_EQ(SplitSentences(buf, 4, 8),
+            (std::vector<std::string>{"The departments are: Clock,",
+                                      "GE Rotary Phone, Oxygen, PHONE-MATE, Peter, Pixel 7,",
+                                      "Pixel 9, Polycom, USRobotics, and Western Electric 500."}));
 }
 
 TEST(CleanSentence, TrimsAndRejectsJunk) {
@@ -98,6 +110,20 @@ TEST(Vad, DetectsUtteranceAndDropsBlips) {
   EXPECT_FALSE(feed(loud, 6));
   EXPECT_TRUE(feed(quiet, 5));
   EXPECT_EQ(v.ready.size(), size_t(11 * kFrameSamples));  // speech + trailing silence
+}
+
+TEST(AudioQueue, FillerPlaysOnlyInGaps) {
+  AudioQueue q;
+  q.SetFiller({7, 8});
+  EXPECT_TRUE(q.Busy());
+  q.Push({1, 2, 3});
+  int16_t out[6];
+  q.Pop(out, 6);  // real audio first, then the loop from its start
+  EXPECT_EQ(std::vector<int16_t>(out, out + 6), (std::vector<int16_t>{1, 2, 3, 7, 8, 7}));
+  q.SetFiller({});
+  q.Pop(out, 2);
+  EXPECT_EQ(out[0], 0);
+  EXPECT_FALSE(q.Busy());
 }
 
 TEST(AudioQueue, PopsInOrderAndPadsWithSilence) {

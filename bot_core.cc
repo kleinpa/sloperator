@@ -38,7 +38,8 @@ static std::vector<std::pair<std::string, Field>> Fields(Config& c) {
           {"vad.max_speech_s", &c.vad.max_speech_s}, {"knowledge_intro", &c.knowledge_intro},
           {"transfer_intro", &c.transfer_intro}, {"transfer_say", &c.transfer_say}, {"cues", &c.cues},
           {"keep_alive", &c.keep_alive}, {"llm_timeout_s", &c.llm_timeout_s},
-          {"service_timeout_s", &c.service_timeout_s}};
+          {"service_timeout_s", &c.service_timeout_s}, {"chunk_first_words", &c.chunk_first_words},
+          {"chunk_words", &c.chunk_words}};
 }
 static json::json_pointer Ptr(std::string k) { return json::json_pointer("/" + (std::replace(k.begin(), k.end(), '.', '/'), k)); }
 
@@ -249,7 +250,8 @@ struct Ollama : LlmClient {
             r.transfer = f.value("arguments", json::object()).value("department", "");
         auto c = m.value("content", "");
         r.text += c, buf += c;
-        for (auto& s : SplitSentences(buf, first)) emit(s);
+        for (auto& s : SplitSentences(buf, first ? g_cfg.chunk_first_words : g_cfg.chunk_words, g_cfg.chunk_words))
+          emit(s);
       }
       return go;
     };
@@ -329,15 +331,13 @@ void Warmup() {
 
 // ── Audio cues ────────────────────────────────────────────────────────────────
 
-// Decaying sine burst, repeated every `every_ms` across `total_ms` if given.
-static std::vector<int16_t> Tone(float hz, float ms, float decay, float gain,
-                                 int total_ms = 0, int every_ms = 0) {
-  std::vector<int16_t> v(std::max(total_ms, int(ms)) * kAudioRate / 1000);
-  for (size_t s = 0; s < v.size(); s += every_ms ? every_ms * kAudioRate / 1000 : v.size())
-    for (int i = 0; i < ms * kAudioRate / 1000 && s + i < v.size(); i++) {
-      float t = float(i) / kAudioRate;
-      v[s + i] = int16_t(32767 * gain * std::exp(-decay * t) * std::sin(2 * M_PI * hz * t));
-    }
+// Decaying sine burst.
+static std::vector<int16_t> Tone(float hz, float ms, float decay, float gain) {
+  std::vector<int16_t> v(int(ms) * kAudioRate / 1000);
+  for (size_t i = 0; i < v.size(); i++) {
+    float t = float(i) / kAudioRate;
+    v[i] = int16_t(32767 * gain * std::exp(-decay * t) * std::sin(2 * M_PI * hz * t));
+  }
   return v;
 }
 static std::vector<int16_t> AnswerChime() {
@@ -346,7 +346,12 @@ static std::vector<int16_t> AnswerChime() {
 }
 static auto ListeningChime() { return Tone(1047, 80, 10, .3f); }
 static auto SegmentChime() { return Tone(330, 60, 20, .2f); }
-static auto ThinkingBeeps(int ms) { return Tone(220, 80, 30, .08f, ms, 600); }
+// One 600 ms period, beep last: a gap stays silent for ~0.5 s before beeping.
+static std::vector<int16_t> ThinkingLoop() {
+  auto b = Tone(220, 80, 30, .08f);
+  std::vector<int16_t> v(kAudioRate * 600 / 1000 - b.size());
+  return v.insert(v.end(), b.begin(), b.end()), v;
+}
 
 // ── Session ───────────────────────────────────────────────────────────────────
 
@@ -378,7 +383,7 @@ void Session::Start() {
 
 void Session::ProcessRxFrame(const int16_t* s, int n) {
   std::vector<int16_t> utt;
-  if (audio_out.Size()) return vad_->Reset();  // half-duplex: deaf while speaking
+  if (audio_out.Busy()) return vad_->Reset();  // half-duplex: deaf while speaking/thinking
   if (!vad_->Push(s, n, utt)) return;
   { std::lock_guard l(mu_); pending_.push(std::move(utt)); }
   cv_.notify_one();
@@ -387,6 +392,8 @@ void Session::ProcessRxFrame(const int16_t* s, int n) {
 void Session::Cue(const std::vector<int16_t>& v) {
   if (g_cfg.cues) audio_out.Push(v);
 }
+
+void Session::Thinking(bool on) { audio_out.SetFiller(on && g_cfg.cues ? ThinkingLoop() : std::vector<int16_t>{}); }
 
 void Session::Say(const std::string& text) {
   LOG(INFO) << caller_ << " [tts] " << text;
@@ -413,22 +420,21 @@ void Session::Run() {
       pending_.pop();
     }
     Cue(SegmentChime());
-    Cue(ThinkingBeeps(int(pcm.size() * 1000 / kAudioRate) + 2000));
+    Thinking(true);
     std::string text = asr_->Transcribe(pcm);
-    audio_out.Clear();
+    Thinking(false);
     LOG(INFO) << caller_ << " [stt] " << pcm.size() * 1000 / kAudioRate << " ms → \"" << text << '"';
     if (text.empty()) continue;
     history_.push_back({{"role", "user"}, {"content", text}});
 
-    Cue(ThinkingBeeps(30000));
+    Thinking(true);  // beeps fill any gap until the reply is fully generated
     bool spoke = false;
     auto r = llm_->Chat(Messages(), [&](const std::string& s) {
       if (!active) return false;
-      if (!spoke) audio_out.Clear(), spoke = true;
-      Say(s);
+      Say(s), spoke = true;
       return active.load();
     });
-    if (!spoke) audio_out.Clear();  // LLM failed or only called a tool
+    Thinking(false);
     if (!active) return;
     if (!spoke && r.transfer.empty()) Say(r.text = g_cfg.fallback);  // never leave the caller in silence
     history_.push_back({{"role", "assistant"}, {"content", r.text}});
