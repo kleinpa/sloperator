@@ -23,7 +23,19 @@ cc_test(
 cc_test(
     name = "test_e2e_sip",
     srcs = ["test_e2e_sip.cc"],
-    data = ["//:sloperator"],
+    data = [
+        "//:sloperator",
+        "@moonshine_base_en//:model",
+        "@moonshine_base_en//:tokens.txt",
+        "@piper_lessac//:model",
+        "@piper_lessac//:tokens.txt",
+        "@silero_vad//file",
+    ],
+    env = {
+        "STT_MODEL": "$(rlocationpath @moonshine_base_en//:tokens.txt)",
+        "TTS_MODEL": "$(rlocationpath @piper_lessac//:tokens.txt)",
+        "VAD_MODEL": "$(rlocationpath @silero_vad//file)",
+    },
     tags = ["exclusive", "local"],
     linkopts = [
         "-ldl",
