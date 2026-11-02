@@ -477,3 +477,14 @@ TEST_F(SipTest, MissingModelIsPulledInBackground) {
   EXPECT_TRUE(Pump(15s, [&] { return g_pulls && ollama.hits; }))
       << "pulls=" << g_pulls << " warm chats=" << ollama.hits;
 }
+
+TEST_F(SipTest, TwoSimultaneousCallsBothGetAnswers) {
+  Launch("max_calls: 2\nvad: {threshold: 300, silence_ms: 300, min_speech_ms: 100}\n");
+  ASSERT_TRUE(Pump(15s, [&] { return piper.hits && whisper.hits && ollama.hits; }));
+  CallerPort a, b;
+  ASSERT_TRUE(Dial(a) && Dial(b)) << "second concurrent call rejected";
+  // Each caller speaks once; warmup used one of each service already.
+  EXPECT_TRUE(Pump(15s, [&] { return whisper.hits >= 3 && ollama.hits >= 3 && piper.hits >= 3; }))
+      << "stt=" << whisper.hits << " llm=" << ollama.hits << " tts=" << piper.hits;
+  EXPECT_TRUE(Pump(3s, [&] { return a.heard > 300 && b.heard > 300; })) << a.heard << " " << b.heard;
+}

@@ -65,6 +65,12 @@ directory:                           # department → extension (transfer_call t
 pbx: pbx.local                       # SIP host transfers are sent to
 ```
 
+**Concurrent calls:** set `max_calls: N` and `OLLAMA_NUM_PARALLEL=N`. Each call
+gets its own pipeline. In-process STT/TTS models are shared and take turns
+(about 0.3 s each). On CPU, parallel LLM token generation is close to free,
+because it's memory-bandwidth bound, but prompt processing is not: N callers
+speaking at once each wait longer.
+
 Run with `--public_addr <ip>` if the bot is behind NAT. Without `stt_model` or
 `tts_model`, it uses the Wyoming services at `whisper:` / `piper:` instead.
 
