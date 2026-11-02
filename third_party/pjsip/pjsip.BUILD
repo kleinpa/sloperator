@@ -28,6 +28,8 @@ configure_make(
     name = "pjsip",
     lib_source = ":all_srcs",
     configure_in_place = True,
+    # pjsua's call table is compile-time (default 4); room for max_calls + one to refuse.
+    configure_prefix = "echo '#define PJSUA_MAX_CALLS 32' > pjlib/include/pj/config_site.h &&",
     configure_options = [
         # ── codec stripping ─────────────────────────────────────────────────
         "--disable-speex-aec",    # Speex echo canceller (we set ecTailLen=0)

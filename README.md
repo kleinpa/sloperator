@@ -68,8 +68,10 @@ directory:                           # department → extension (transfer_call t
 pbx: pbx.local                       # SIP host transfers are sent to
 ```
 
-**Concurrent calls:** set `max_calls: N` and `OLLAMA_NUM_PARALLEL=N`. Each call
-gets its own pipeline. In-process STT/TTS models are shared and take turns
+**Concurrent calls:** `max_calls` (default 4, at most 31) calls are up at once;
+the next caller gets 486 Busy Here and a WARNING log line. Each call gets its own
+pipeline and VAD. With `OLLAMA_NUM_PARALLEL=1`, LLM turns queue in Ollama; set it to
+N for parallel generation. In-process STT/TTS models are shared and take turns
 (about 0.3 s each). On CPU, parallel LLM token generation is close to free,
 because it's memory-bandwidth bound, but prompt processing is not: N callers
 speaking at once each wait longer.

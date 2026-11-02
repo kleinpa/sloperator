@@ -54,7 +54,9 @@ int main(int argc, char* argv[]) {
   try {
     ep.libCreate();
     pj::EpConfig cfg;
-    cfg.uaConfig.maxCalls = g_cfg.max_calls;
+    // pjsua lets every call through so onIncomingCall can refuse past max_calls itself.
+    if (g_cfg.max_calls > PJSUA_MAX_CALLS - 1) LOG(FATAL) << "[config] max_calls > " << PJSUA_MAX_CALLS - 1;
+    cfg.uaConfig.maxCalls = PJSUA_MAX_CALLS;
     cfg.logConfig.level = cfg.logConfig.consoleLevel = 3;
     cfg.medConfig.clockRate = cfg.medConfig.sndClockRate = kAudioRate;
     cfg.medConfig.noVad = true;

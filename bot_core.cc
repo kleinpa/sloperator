@@ -557,8 +557,16 @@ void BotCall::onCallMediaState(pj::OnCallMediaStateParam&) {
 
 void BotAccount::onIncomingCall(pj::OnIncomingCallParam& prm) {
   LOG(INFO) << "[call] incoming from " << prm.rdata.srcAddress;
+  auto* c = new BotCall(*this, prm.callId);
   pj::CallOpParam op;
-  op.statusCode = PJSIP_SC_OK;
-  try { (new BotCall(*this, prm.callId))->answer(op); }
-  catch (pj::Error& e) { LOG(ERROR) << "[call] answer: " << e.info(); }
+  try {
+    if (BotCall::live > g_cfg.max_calls) {
+      LOG(WARNING) << c->getInfo().remoteUri << " [call] busy: " << g_cfg.max_calls
+                   << " calls up (max_calls); 486";
+      op.statusCode = PJSIP_SC_BUSY_HERE;
+      return c->hangup(op);
+    }
+    op.statusCode = PJSIP_SC_OK;
+    c->answer(op);
+  } catch (pj::Error& e) { LOG(ERROR) << "[call] answer: " << e.info(); }
 }

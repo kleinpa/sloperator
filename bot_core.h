@@ -47,7 +47,7 @@ struct Config {
   double tts_speed = 1;               // tempo only (pitch kept)
   double tts_varispeed = 1;          // tempo + pitch; 0.726 = old derpy voice
   int tts_speaker = 0;               // multi-voice models (Kokoro)
-  int max_calls = 1, history_turns = 8, threads = 4;  // threads: in-process models
+  int max_calls = 4, history_turns = 8, threads = 4;  // threads: in-process models
   double tts_rms = 4000;  // speech loudness, ~-18 dBFS
   VadParams vad;
 };
@@ -148,7 +148,9 @@ class BotAudioPort : public pj::AudioMediaPort {
 
 class BotCall : public pj::Call {
  public:
-  using pj::Call::Call;
+  BotCall(pj::Account& a, int id) : pj::Call(a, id) { live++; }
+  ~BotCall() override { live--; }
+  static inline std::atomic_int live{0};  // incl. ones being rejected
   void onCallState(pj::OnCallStateParam&) override;
   void onCallMediaState(pj::OnCallMediaStateParam&) override;
   void onCallTransferStatus(pj::OnCallTransferStatusParam&) override;

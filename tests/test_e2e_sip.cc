@@ -426,8 +426,13 @@ struct CallerCall : pj::Call {
   CallerPort* port;
   std::atomic_bool up{false};
   std::string refer_to;
+  std::atomic_int code{0};  // final status once disconnected
   CallerCall(pj::Account& a, CallerPort* p) : pj::Call(a), port(p) {}
-  void onCallState(pj::OnCallStateParam&) override { up = getInfo().state == PJSIP_INV_STATE_CONFIRMED; }
+  void onCallState(pj::OnCallStateParam&) override {
+    auto ci = getInfo();
+    up = ci.state == PJSIP_INV_STATE_CONFIRMED;
+    if (ci.state == PJSIP_INV_STATE_DISCONNECTED) code = ci.lastStatusCode;
+  }
   void onCallMediaState(pj::OnCallMediaStateParam&) override {
     try { auto aud = getAudioMedia(-1); aud.startTransmit(*port), port->startTransmit(aud); }
     catch (pj::Error&) {}
@@ -557,8 +562,9 @@ TEST_F(SipTest, MissingModelIsPulledInBackground) {
       << "pulls=" << g_pulls << " warm chats=" << ollama.hits;
 }
 
+// Regression: max_calls defaulted to 1, so a second caller got pjsua's busy.
 TEST_F(SipTest, TwoSimultaneousCallsBothGetAnswers) {
-  Launch("max_calls: 2\nvad: {threshold: 300, silence_ms: 300, min_speech_ms: 100}\n");
+  Launch("vad: {threshold: 300, silence_ms: 300, min_speech_ms: 100}\n");
   ASSERT_TRUE(Pump(15s, [&] { return piper.hits && whisper.hits && ollama.hits; }));
   CallerPort a, b;
   ASSERT_TRUE(Dial(a) && Dial(b)) << "second concurrent call rejected";
@@ -566,4 +572,19 @@ TEST_F(SipTest, TwoSimultaneousCallsBothGetAnswers) {
   EXPECT_TRUE(Pump(15s, [&] { return whisper.hits >= 3 && ollama.hits >= 3 && piper.hits >= 3; }))
       << "stt=" << whisper.hits << " llm=" << ollama.hits << " tts=" << piper.hits;
   EXPECT_TRUE(Pump(3s, [&] { return a.heard > 300 && b.heard > 300; })) << a.heard << " " << b.heard;
+}
+
+TEST_F(SipTest, PastMaxCallsIsBusyUntilASlotFrees) {
+  Launch("max_calls: 1\nvad: {threshold: 300}\n");
+  CallerPort a, b;
+  auto* first = Dial(a);
+  ASSERT_TRUE(first);
+  auto* second = new CallerCall(*acc, &b);
+  pj::CallOpParam op(true);
+  second->makeCall("sip:bot@127.0.0.1:" + std::to_string(kSip), op);
+  ASSERT_TRUE(Pump(5s, [&] { return second->code.load(); }));
+  EXPECT_EQ(second->code, PJSIP_SC_BUSY_HERE);
+  pj::CallOpParam bye;
+  first->hangup(bye);
+  EXPECT_TRUE(Dial(b)) << "slot not freed after hangup";
 }
