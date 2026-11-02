@@ -1,8 +1,16 @@
 # sloperator config (--config_file). Every key is optional; defaults shown.
 
-# whisper: whisper:10300           # Wyoming STT
+# In-process models (sherpa-onnx); paths as baked into the container image.
+# Remove a line to use the Wyoming service below instead.
+stt_model: /models/moonshine       # or a Parakeet TDT dir (more accurate, ~650 MB)
+tts_model: /models/piper           # or a Kokoro dir (more natural, ~5x slower)
+# tts_speed: 1.0
+# tts_speaker: 0                   # voice id for multi-voice models (Kokoro)
+# threads: 4                       # per in-process model; = physical cores
+
+# whisper: whisper:10300           # Wyoming STT (if no stt_model)
 # ollama:  http://ollama:11434
-# piper:   piper:10200             # Wyoming TTS
+# piper:   piper:10200             # Wyoming TTS (if no tts_model)
 # pbx:     ""                      # SIP host for transfers
 model: qwen3:4b-instruct
 # language: en                     # sent to Whisper; skips language detection
@@ -27,10 +35,12 @@ directory:
   sales: 1042
   support: 1050
 
-# vad:
-#   threshold: 500                 # RMS of a voiced frame; lower = more sensitive
-#   silence_ms: 600                # trailing silence that ends a turn
-#   min_speech_ms: 200
+vad:
+  model: /models/silero_vad.onnx   # neural VAD; remove for the energy VAD
+  # prob: 0.5                      # Silero speech probability threshold
+  # threshold: 500                 # energy VAD: RMS of a voiced frame
+  # silence_ms: 600                # trailing silence that ends a turn
+  # min_speech_ms: 200
 
 # Forwarded verbatim to Ollama "options" (merged over these defaults).
 options:
